@@ -47,7 +47,7 @@ export default function TdsOdoo() {
     formData.append('custom_name', reportName);
 
     try {
-      const response = await fetch('http://127.0.0.1:5000/api/direct-tax/tds-odoo', {
+      const response = await fetch('https://taxautomationapp.onrender.com/api/direct-tax/tds-odoo', {
         method: 'POST',
         body: formData,
       });
@@ -56,7 +56,7 @@ export default function TdsOdoo() {
       if (response.ok) {
         setStatus('success');
         setMessage(data.message);
-        setDownloadUrl(`http://127.0.0.1:5000${data.download_url}`);
+        setDownloadUrl(`https://taxautomationapp.onrender.com${data.download_url}`);
         setSummaryData(data.summary_data || []);
       } else {
         setStatus('error');

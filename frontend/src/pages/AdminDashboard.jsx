@@ -13,7 +13,7 @@ export default function AdminDashboard({ currentUser }) {
   
   const fetchAllData = () => {
     setLoading(true);
-    fetch('http://127.0.0.1:5000/api/auth/users')
+    fetch('https://taxautomationapp.onrender.com/api/auth/users')
       .then(res => res.json())
       .then(userData => {
         const safeUserData = Array.isArray(userData) ? userData : [];
@@ -33,7 +33,7 @@ export default function AdminDashboard({ currentUser }) {
 
   const saveUsersToBackend = (updatedUsers) => {
     // First get fresh master list, then merge updates
-    fetch('http://127.0.0.1:5000/api/auth/users')
+    fetch('https://taxautomationapp.onrender.com/api/auth/users')
     .then(res => res.json())
     .then(allUsers => {
         const masterList = allUsers.map(serverUser => {
@@ -45,7 +45,7 @@ export default function AdminDashboard({ currentUser }) {
             if (!masterList.find(u => u.id === localUser.id)) masterList.push(localUser);
         });
 
-        fetch('http://127.0.0.1:5000/api/auth/users', {
+        fetch('https://taxautomationapp.onrender.com/api/auth/users', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(masterList)
@@ -82,11 +82,11 @@ export default function AdminDashboard({ currentUser }) {
   const deleteUser = (id) => {
       if (window.confirm("Remove user?")) {
           setUsers(prev => prev.filter(u => u.id !== id));
-          fetch('http://127.0.0.1:5000/api/auth/users')
+          fetch('https://taxautomationapp.onrender.com/api/auth/users')
             .then(res => res.json())
             .then(allUsers => {
                 const remaining = allUsers.filter(u => u.id !== id);
-                fetch('http://127.0.0.1:5000/api/auth/users', {
+                fetch('https://taxautomationapp.onrender.com/api/auth/users', {
                     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(remaining)
                 }).then(() => fetchAllData());
             });
