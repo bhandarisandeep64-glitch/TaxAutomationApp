@@ -38,7 +38,7 @@ export default function TdsChallan() {
     formData.append('file', file);
 
     try {
-      const res = await fetch('http://127.0.0.1:5000/api/direct-tax/challan/analyze', {
+      const res = await fetch('https://taxautomationapp.onrender.com/api/direct-tax/challan/analyze', {
         method: 'POST',
         body: formData
       });
@@ -62,7 +62,7 @@ export default function TdsChallan() {
   const handleUpdate = async () => {
     setStatus('processing');
     try {
-      const res = await fetch('http://127.0.0.1:5000/api/direct-tax/challan/update', {
+      const res = await fetch('https://taxautomationapp.onrender.com/api/direct-tax/challan/update', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -74,7 +74,7 @@ export default function TdsChallan() {
       const data = await res.json();
 
       if (res.ok) {
-        setDownloadUrl(`http://127.0.0.1:5000${data.download_url}`);
+        setDownloadUrl(`https://taxautomationapp.onrender.com${data.download_url}`);
         setStep(3);
         setStatus('success');
       } else {

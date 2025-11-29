@@ -50,7 +50,7 @@ export default function Reco26AS() {
     formData.append('custom_name', reportName);
 
     try {
-      const response = await fetch('http://127.0.0.1:5000/api/direct-tax/26as-reco', {
+      const response = await fetch('https://taxautomationapp.onrender.com/api/direct-tax/26as-reco', {
         method: 'POST',
         body: formData,
       });
@@ -59,7 +59,7 @@ export default function Reco26AS() {
       if (response.ok) {
         setStatus('success');
         setMessage(data.message);
-        setDownloadUrl(`http://127.0.0.1:5000${data.download_url}`);
+        setDownloadUrl(`https://taxautomationapp.onrender.com${data.download_url}`);
         setFinalFileName(data.filename || '26AS_Converted.xlsx');
         setSummaryData(data.summary_data || []);
       } else {

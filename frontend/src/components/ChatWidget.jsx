@@ -8,7 +8,7 @@ export default function ChatWidget({ user, onClose }) {
   const [loading, setLoading] = useState(false);
 
   const fetchMessages = () => {
-    fetch('http://127.0.0.1:5000/api/chat')
+    fetch('https://taxautomationapp.onrender.com/api/chat')
         .then(res => res.json())
         .then(data => {
             // Filter logic:
@@ -41,7 +41,7 @@ export default function ChatWidget({ user, onClose }) {
     const newMsg = { id: Date.now(), username: user.name, content: msg, timestamp: 'Just now', type: 'general' };
     setMessages([newMsg, ...messages]);
     
-    await fetch('http://127.0.0.1:5000/api/chat', {
+    await fetch('https://taxautomationapp.onrender.com/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username: user.username, content: msg }) // Use username for consistency
@@ -53,7 +53,7 @@ export default function ChatWidget({ user, onClose }) {
   // Admin Action Handler
   const handleAction = async (targetUsername, action, messageId) => {
       try {
-          await fetch('http://127.0.0.1:5000/api/chat/handle-request', {
+          await fetch('https://taxautomationapp.onrender.com/api/chat/handle-request', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ 

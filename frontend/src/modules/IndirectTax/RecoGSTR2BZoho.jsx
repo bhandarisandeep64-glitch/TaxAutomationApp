@@ -75,7 +75,7 @@ export default function RecoGSTR2BZoho() {
     formData.append('file_zoho', zohoFile);
 
     try {
-      const response = await fetch('http://127.0.0.1:5000/api/indirect-tax/reco-gstr2b-zoho', {
+      const response = await fetch('https://taxautomationapp.onrender.com/api/indirect-tax/reco-gstr2b-zoho', {
         method: 'POST',
         body: formData,
       });

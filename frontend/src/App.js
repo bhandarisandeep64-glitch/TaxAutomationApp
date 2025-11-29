@@ -56,7 +56,7 @@ export default function App() {
   const sendAccessRequest = async () => {
       if (!requestReason) return;
       try {
-          await fetch('http://127.0.0.1:5000/api/chat', {
+          await fetch('https://taxautomationapp.onrender.com/api/chat', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({

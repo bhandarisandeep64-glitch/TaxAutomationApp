@@ -102,7 +102,7 @@ export default function RecoGSTR2B() {
     });
 
     try {
-      const response = await fetch('http://127.0.0.1:5000/api/indirect-tax/reco-gstr2b', {
+      const response = await fetch('https://taxautomationapp.onrender.com/api/indirect-tax/reco-gstr2b', {
         method: 'POST',
         body: formData,
       });

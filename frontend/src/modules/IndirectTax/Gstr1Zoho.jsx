@@ -57,7 +57,7 @@ export default function Gstr1Zoho() {
     formData.append('custom_name', reportName);
 
     try {
-      const response = await fetch('http://127.0.0.1:5000/api/indirect-tax/gstr1-zoho', {
+      const response = await fetch('https://taxautomationapp.onrender.com/api/indirect-tax/gstr1-zoho', {
         method: 'POST',
         body: formData,
       });
@@ -66,7 +66,7 @@ export default function Gstr1Zoho() {
       if (response.ok) {
         setStatus('success');
         setMessage(data.message);
-        setDownloadUrl(`http://127.0.0.1:5000${data.download_url}`);
+        setDownloadUrl(`https://taxautomationapp.onrender.com${data.download_url}`);
         setFinalFileName(data.filename || 'GSTR1_Zoho_Processed.xlsx');
         setSummaryData(data.summary_data || []);
       } else {

@@ -20,7 +20,7 @@ export default function ComplianceTable({ user }) { // Receive user prop
     
     setLoading(true);
     // Pass user_id in query params
-    fetch(`http://127.0.0.1:5000/api/compliance?user_id=${user.id}`)
+    fetch(`https://taxautomationapp.onrender.com/api/compliance?user_id=${user.id}`)
       .then(res => res.json())
       .then(data => {
         setClients(data);
@@ -34,7 +34,7 @@ export default function ComplianceTable({ user }) { // Receive user prop
     setSaveStatus('saving');
     setClients(updatedClients);
     
-    fetch('http://127.0.0.1:5000/api/compliance', {
+    fetch('https://taxautomationapp.onrender.com/api/compliance', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       // Send user_id in body
