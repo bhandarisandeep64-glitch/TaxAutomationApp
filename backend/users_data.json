@@ -1,0 +1,31 @@
+[
+    {
+        "id": 99,
+        "name": "Super Admin",
+        "password": "123",
+        "restrictedModules": [],
+        "role": "admin",
+        "status": "Active",
+        "username": "admin"
+    },
+    {
+        "id": 100,
+        "name": "sandeep",
+        "password": "123456",
+        "restrictedModules": [
+            "direct_tax"
+        ],
+        "role": "user",
+        "status": "Active",
+        "username": "sandeep1"
+    },
+    {
+        "id": 101,
+        "name": "pragati",
+        "password": "prag1",
+        "restrictedModules": [],
+        "role": "user",
+        "status": "Active",
+        "username": "prag"
+    }
+]
