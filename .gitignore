@@ -1,0 +1,19 @@
+# --- Python / Backend ---
+__pycache__/
+*.pyc
+venv/
+env/
+.env
+backend/temp_uploads/
+backend/outputs/
+backend/compliance_data.json
+
+# --- React / Frontend ---
+frontend/node_modules/
+frontend/build/
+frontend/dist/
+.DS_Store
+
+# --- IDE Settings ---
+.vscode/
+.idea/
