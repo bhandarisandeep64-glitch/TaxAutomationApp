@@ -1,18 +1,14 @@
 import pandas as pd
 from io import BytesIO
 import numpy as np
-import re
 from xlsxwriter.utility import xl_col_to_name
 
 # ==========================================
-#  SECTION 1: SHARED UTILITIES (ADVANCED)
+#  SECTION 1: SHARED UTILITIES
 # ==========================================
 
 def add_formatting_and_subtotals(writer, df, sheet_name):
     if df.empty: return 
-    
-    # Safety: Drop duplicate columns
-    df = df.loc[:, ~df.columns.duplicated()]
     
     # Write dataframe
     df.to_excel(writer, sheet_name=sheet_name, index=False)
@@ -61,7 +57,7 @@ def add_formatting_and_subtotals(writer, df, sheet_name):
         worksheet.conditional_format(range_str, {'type': 'text', 'criteria': 'containing', 'value': 'Match', 'format': green_format})
 
 # ==========================================
-#  SECTION 2: PORTAL CLEANING LOGIC (ADVANCED)
+#  SECTION 2: PORTAL CLEANING LOGIC
 # ==========================================
 
 def filter_portal_sheets(xls):
@@ -93,19 +89,31 @@ def clean_portal_df(df_raw, sheet_name):
             header_idx = i; break
     if header_idx == -1: return pd.DataFrame()
 
+    # Create DF starting after header
     df_data = df_raw.iloc[header_idx+1:].reset_index(drop=True)
+    # Capture Row 1 as list (Fix for 'Columns must be same length' error)
     row1 = df_raw.iloc[header_idx].astype(str).replace('nan', '').str.strip().tolist()
     
     if header_idx + 1 < len(df_raw):
+        # Capture Row 2 as list
         row2 = df_raw.iloc[header_idx+1].astype(str).replace('nan', '').str.strip().tolist()
+        
         if any('tax' in val.lower() for val in row2):
+            # Multi-row header detected
             df_data = df_raw.iloc[header_idx+2:].reset_index(drop=True)
             new_cols = [c2 if c2 else c1 if c1 else "Unknown" for c1, c2 in zip(row1, row2)]
-            if len(new_cols) == df_data.shape[1]: df_data.columns = new_cols
+            
+            # Safe Assignment
+            if len(new_cols) == df_data.shape[1]:
+                df_data.columns = new_cols
         else: 
-            if len(row1) == df_data.shape[1]: df_data.columns = row1
+            # Single row header
+            if len(row1) == df_data.shape[1]:
+                df_data.columns = row1
     else: 
-        if len(row1) == df_data.shape[1]: df_data.columns = row1
+        # Fallback single row header
+        if len(row1) == df_data.shape[1]:
+            df_data.columns = row1
 
     # 2. Rename & Clean
     rename_map = {
@@ -122,9 +130,6 @@ def clean_portal_df(df_raw, sheet_name):
         for k, v in rename_map.items():
             if k.lower() == str(col).lower().strip(): mapped = v; break
         final_cols.append(mapped)
-    
-    # FIX: Remove duplicate columns
-    df_data = df_data.loc[:, ~df_data.columns.duplicated()]
     df_data.columns = final_cols
 
     numeric_cols = ['Taxable Value', 'Invoice Value', 'IGST Tax Amount', 'CGST Tax Amount', 'SGST Tax Amount', 'Cess Amount', 'Rate']
@@ -142,7 +147,7 @@ def clean_portal_df(df_raw, sheet_name):
     return df_data
 
 # ==========================================
-#  SECTION 3: ODOO CLEANING LOGIC (PRESERVED)
+#  SECTION 3: ODOO CLEANING LOGIC (4 SLOTS)
 # ==========================================
 
 def clean_odoo_data(df, is_rcm=False):
@@ -195,15 +200,9 @@ def clean_odoo_data(df, is_rcm=False):
     elif 'Number' in df.columns:
         df['Invoice Number'] = df['Number']
 
-    # --- BRIDGE: Make Compatible with Advanced Engine ---
-    # The Engine looks for 'Taxable Value' and 'Invoice date'
-    if 'Taxable Amt.' in df.columns: df['Taxable Value'] = df['Taxable Amt.']
-    if 'Date' in df.columns: df['Invoice date'] = df['Date']
-    # --------------------------------------------------
-
     final_columns = [
-        'Partner', 'GSTIN', 'Date', 'Invoice date', 'Invoice Number', 'Number', 'Reference', 'Account', 
-        'Label', 'Rate_Str', 'Total', 'Taxable Amt.', 'Taxable Value', 'IGST', 'CGST', 'SGST',
+        'Partner', 'GSTIN', 'Date', 'Invoice Number', 'Number', 'Reference', 'Account', 
+        'Label', 'Rate_Str', 'Total', 'Taxable Amt.', 'IGST', 'CGST', 'SGST',
         'As per Portal', 'Difference', 'Remarks'
     ]
     for col in final_columns:
@@ -268,190 +267,64 @@ def process_odoo_logic_4files(file_dict):
     return processed_results
 
 # ==========================================
-#  SECTION 4: RECO ENGINE (ADVANCED FUZZY & DATE)
+#  SECTION 4: RECO ENGINE (MATCHING)
 # ==========================================
 
-def clean_inv_str(s):
-    if pd.isna(s): return ""
-    return re.sub(r'[^a-zA-Z0-9]', '', str(s).lower())
-
 def generate_lookup_map(data_source):
-    exact_map = {}
-    amount_map = {} 
-    
+    lookup_map = {}
     for key, val in data_source.items():
-        if isinstance(val, pd.DataFrame): df = val 
-        else: df = val['df'] 
-        
-        # Support both Taxable Value and Taxable Amt.
+        df = val if isinstance(val, pd.DataFrame) else val
         col_inv = 'Invoice Number'
         col_tax = 'Taxable Value' if 'Taxable Value' in df.columns else 'Taxable Amt.'
 
         if col_inv in df.columns and col_tax in df.columns:
             for _, row in df.iterrows():
-                inv_raw = str(row[col_inv]).strip()
-                inv_clean = clean_inv_str(inv_raw)
-                
-                try:
-                    raw_tax = float(row[col_tax])
-                    tax_val = raw_tax if pd.notnull(raw_tax) else 0.0
-                except:
-                    tax_val = 0.0
+                inv = str(row[col_inv]).strip().lower()
+                tax_val = float(row[col_tax])
+                if inv not in lookup_map: lookup_map[inv] = tax_val
+    return lookup_map
 
-                exact_key = str(row[col_inv]).strip().lower()
-                if exact_key not in exact_map: exact_map[exact_key] = tax_val
-                
-                amt_key = f"{tax_val:.2f}"
-                if amt_key not in amount_map: amount_map[amt_key] = []
-                
-                amount_map[amt_key].append({
-                    'clean_inv': inv_clean,
-                    'tax_val': tax_val
-                })
-
-    return exact_map, amount_map
-
-def apply_reco_logic(df, lookup_maps, target_col_name, is_portal_sheet, reco_month_dt=None):
-    exact_map, amount_map = lookup_maps
+def apply_reco_logic(df, lookup_map, target_col, is_portal_sheet):
+    # Initialize columns
+    df[target_col] = 0.0
+    df['Difference'] = 0.0
+    df['Remarks'] = ''
     
-    df[target_col_name] = 0.0; df['Difference'] = 0.0; df['Remarks'] = ''
     col_inv = 'Invoice Number'
     col_tax = 'Taxable Value' if 'Taxable Value' in df.columns else 'Taxable Amt.'
-    col_date = 'Invoice date' 
     
     if col_inv not in df.columns: return df
 
-    if is_portal_sheet and reco_month_dt and col_date in df.columns:
-        df[col_date] = pd.to_datetime(df[col_date], dayfirst=True, errors='coerce')
-
     def row_logic(row):
-        inv_raw = str(row.get(col_inv, '')).strip()
-        inv_clean = clean_inv_str(inv_raw)
-        inv_exact_key = inv_raw.lower()
-        
-        my_tax = float(row.get(col_tax, 0)) if pd.notnull(row.get(col_tax, 0)) else 0.0
-        
-        remark = ""
-        other_val = 0.0
-        diff = 0.0
-        match_found = False
-        
-        # 1. Exact Match
-        if inv_exact_key in exact_map:
-            other_val = exact_map[inv_exact_key]
-            if abs(my_tax - other_val) < 2:
-                match_found = True
-                remark = "Match"
-            else:
-                 match_found = True 
-                 remark = "Mismatch"
-
-        # 2. Fuzzy Match (Amount Based)
-        if not match_found:
-            amt_key = f"{my_tax:.2f}"
-            if amt_key in amount_map:
-                candidates = amount_map[amt_key]
-                for cand in candidates:
-                    cand_clean = cand['clean_inv']
-                    if (inv_clean and cand_clean) and ((inv_clean in cand_clean) or (cand_clean in inv_clean)):
-                        other_val = cand['tax_val']
-                        match_found = True
-                        remark = "Match (Fuzzy)"
-                        break 
-        
-        if match_found:
+        inv_clean = str(row.get(col_inv, '')).strip().lower()
+        my_tax = float(row.get(col_tax, 0))
+        if inv_clean in lookup_map:
+            other_val = lookup_map[inv_clean]
             diff = my_tax - other_val
-            if abs(diff) > 2: remark = "Mismatch"
+            remark = "Match" if abs(diff) < 2 else "Mismatch"
+            return pd.Series([other_val, diff, remark])
         else:
             remark = "Not in Books" if is_portal_sheet else "Not on Portal"
-            diff = my_tax
+            return pd.Series([0.0, my_tax, remark])
 
-        # 3. Date Check
-        if is_portal_sheet and reco_month_dt and pd.notnull(row.get(col_date)):
-            try:
-                inv_dt = row[col_date]
-                if isinstance(inv_dt, str):
-                     # fallback parsing if to_datetime failed earlier
-                     pass 
-                elif inv_dt < reco_month_dt:
-                    if "Match" in remark: remark += " (Old Inv)" 
-                    else: remark = "Previous Period Inv" 
-            except: pass
-
-        return pd.Series([other_val, diff, remark])
-
+    # Fix for 'Columns must be same length as key' error
+    # Instead of direct DataFrame assignment, we split results
     results = df.apply(row_logic, axis=1)
+    
     if not results.empty:
-        df[target_col_name] = results[0]
+        # Access column indices of the results Series
+        df[target_col] = results[0]
         df['Difference'] = results[1]
         df['Remarks'] = results[2]
+        
     return df
 
 # ==========================================
-#  SECTION 5: SMART SORTING
+#  SECTION 5: MAIN ENTRY POINT
 # ==========================================
 
-def get_smart_sorted_order(portal_dict, books_dict):
-    portal_invs = {}
-    for k, df in portal_dict.items():
-        if 'Invoice Number' in df.columns:
-            unique_invs = set(df['Invoice Number'].astype(str).str.lower().str.strip())
-            portal_invs[k] = unique_invs
-            
-    books_invs = {}
-    for k, df in books_dict.items(): # Note: Odoo dict structure is simpler than Zoho dict
-        if 'Invoice Number' in df.columns:
-            unique_invs = set(df['Invoice Number'].astype(str).str.lower().str.strip())
-            books_invs[k] = unique_invs
-    
-    final_order = []
-    used_books = set()
-
-    for p_name, p_df in portal_dict.items():
-        best_match_name = None
-        highest_intersect = 0
-        p_set = portal_invs.get(p_name, set())
-
-        if p_set:
-            for b_name, b_set in books_invs.items():
-                if b_name in used_books: continue
-                common_count = len(p_set.intersection(b_set))
-                if common_count > highest_intersect:
-                    highest_intersect = common_count
-                    best_match_name = b_name
-
-        base_name = p_name[:20].strip() 
-        p_sheet_title = f"{base_name} (Portal)"
-        final_order.append((p_sheet_title, p_df))
-
-        if best_match_name and highest_intersect > 0:
-            b_df = books_dict[best_match_name]
-            b_sheet_title = f"{base_name} (Books)"
-            final_order.append((b_sheet_title, b_df))
-            used_books.add(best_match_name)
-
-    for b_name, b_df in books_dict.items():
-        if b_name not in used_books:
-            title = f"{b_name} (Books)"[:31]
-            final_order.append((title, b_df))
-            
-    return final_order
-
-# ==========================================
-#  SECTION 6: MAIN ENTRY POINT
-# ==========================================
-
-def generate_reco_report(file_portal, odoo_files_dict, month_str=None):
+def generate_reco_report(file_portal, odoo_files_dict):
     output = BytesIO()
-    reco_dt = None
-    
-    # Try to parse month if provided
-    if month_str:
-        try:
-            reco_dt = pd.to_datetime(month_str + "-01")
-        except:
-            pass 
-
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
         
         # 1. Portal Processing
@@ -470,30 +343,22 @@ def generate_reco_report(file_portal, odoo_files_dict, month_str=None):
             clean_portal_dict[sheet] = df
         if rcm_frames: clean_portal_dict['RCM Combined'] = pd.concat(rcm_frames, ignore_index=True)
 
-        # 2. Odoo Processing (Uses your specific logic)
+        # 2. Odoo Processing (4 Files)
         clean_odoo_dict = process_odoo_logic_4files(odoo_files_dict)
 
-        # 3. Indexing (Exact + Amount Based)
-        books_maps_tuple = generate_lookup_map(clean_odoo_dict) 
-        portal_maps_tuple = generate_lookup_map(clean_portal_dict)
+        # 3. Indexing
+        books_map = generate_lookup_map(clean_odoo_dict)
+        portal_map = generate_lookup_map(clean_portal_dict)
 
-        # 4. Apply Logic (Portal Sheets)
-        processed_portal = {}
+        # 4. Write Portal
         for sheet_name, df in clean_portal_dict.items():
-            df_final = apply_reco_logic(df, books_maps_tuple, 'As per Books', True, reco_dt)
-            processed_portal[sheet_name] = df_final
+            df_final = apply_reco_logic(df, books_map, 'As per Books', True)
+            add_formatting_and_subtotals(writer, df_final, f"Portal - {sheet_name}"[:31])
 
-        # 5. Apply Logic (Books Sheets)
-        processed_books = {}
+        # 5. Write Odoo
         for sheet_name, df in clean_odoo_dict.items():
-            df_final = apply_reco_logic(df, portal_maps_tuple, 'As per Portal', False, None) 
-            processed_books[sheet_name] = df_final
-
-        # 6. Smart Sorting & Writing
-        sorted_sheets = get_smart_sorted_order(processed_portal, processed_books)
-        
-        for sheet_title, df_final in sorted_sheets:
-            add_formatting_and_subtotals(writer, df_final, sheet_title)
+            df_final = apply_reco_logic(df, portal_map, 'As per Portal', False)
+            add_formatting_and_subtotals(writer, df_final, sheet_name[:31])
 
     output.seek(0)
     return output
