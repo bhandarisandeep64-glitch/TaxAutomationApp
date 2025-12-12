@@ -24,7 +24,11 @@ import RecoGSTR2B from './modules/IndirectTax/RecoGSTR2B';
 import RecoGSTR2BZoho from './modules/IndirectTax/RecoGSTR2BZoho'; 
 
 export default function App() {
-  const [user, setUser] = useState(null);
+  // Initialize user state from LocalStorage if it exists
+const [user, setUser] = useState(() => {
+  const savedUser = localStorage.getItem('currentUser');
+  return savedUser ? JSON.parse(savedUser) : null;
+});
   const [currentModule, setCurrentModule] = useState('admin_dashboard');
   const [showChat, setShowChat] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -94,9 +98,12 @@ export default function App() {
 
   if (!user) {
     return <Login onLogin={(userData) => { 
-        setUser(userData); 
-        setCurrentModule(userData.role === 'admin' ? 'admin_dashboard' : 'compliances'); 
-    }} />;
+    // SAVE TO STORAGE HERE
+    localStorage.setItem('currentUser', JSON.stringify(userData)); 
+    
+    setUser(userData); 
+    setCurrentModule(userData.role === 'admin' ? 'admin_dashboard' : 'compliances'); 
+}} />;
   }
 
   const renderContent = () => {
@@ -138,7 +145,17 @@ export default function App() {
 
       {/* Sidebar is Z-10 to sit above background */}
       <div className="relative z-10 flex w-full h-full">
-          <Sidebar user={user} onNavigate={handleNavigation} onLogout={() => setUser(null)} currentModule={currentModule} mobileMenuOpen={mobileMenuOpen} />
+          <Sidebar 
+    user={user} 
+    onNavigate={handleNavigation} 
+    onLogout={() => {
+        // CLEAR STORAGE HERE
+        localStorage.removeItem('currentUser');
+        setUser(null);
+    }} 
+    currentModule={currentModule} 
+    mobileMenuOpen={mobileMenuOpen} 
+/>
 
           <div className="flex-1 md:ml-64 flex flex-col h-screen">
              <header className={`h-16 border-b ${THEME.border} bg-black/20 backdrop-blur-md flex items-center justify-between px-6 sticky top-0 z-30`}>
