@@ -1,12 +1,18 @@
 import json
 import os
 
-USER_DATA_FILE = 'users_data.json'
+# --- FIX: USE ABSOLUTE PATH ---
+# This gets the folder where THIS file (auth.py) lives
+CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+# This goes one step back to the ROOT folder (Black Rose Inc folder)
+BASE_DIR = os.path.dirname(CURRENT_DIR)
+# Now we lock the file path to the root. It will never move.
+USER_DATA_FILE = os.path.join(BASE_DIR, 'users_data.json')
 
 def load_users():
     """Loads users from JSON. Creates default Admin if missing."""
+    # Check if file exists at the ABSOLUTE path
     if not os.path.exists(USER_DATA_FILE):
-        # NOW USES ENVIRONMENT VARIABLES FOR DEFAULT CREATION
         env_user = os.environ.get("ADMIN_USER", "admin")
         env_pass = os.environ.get("ADMIN_PASS", "123")
         
@@ -45,14 +51,14 @@ def save_users(users):
         with open(USER_DATA_FILE, 'w') as f:
             json.dump(users, f, indent=4)
         return True
-    except:
+    except Exception as e:
+        print(f"Error saving users: {e}")
         return False
 
 def authenticate_user(username, password):
     """Checks credentials against Env Vars first, then JSON file."""
     
-    # --- SECURITY UPGRADE: CHECK ENVIRONMENT VARIABLES FIRST ---
-    # This allows the Master Admin to login even if the JSON file is old/broken
+    # 1. Master Admin Check (Environment Override)
     env_user = os.environ.get("ADMIN_USER", "admin")
     env_pass = os.environ.get("ADMIN_PASS", "123")
 
@@ -68,8 +74,8 @@ def authenticate_user(username, password):
                 "restrictedModules": []
             }
         }
-    # -----------------------------------------------------------
 
+    # 2. Standard User Check (File Based)
     users = load_users()
     for user in users:
         if user['username'] == username and user['password'] == password:
