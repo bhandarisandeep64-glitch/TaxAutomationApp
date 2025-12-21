@@ -1,406 +1,462 @@
-import os
-from flask import Flask, jsonify, request, send_from_directory, send_file
-from flask_cors import CORS
-from werkzeug.utils import secure_filename
-
-# --- 1. AUTH & CHAT IMPORTS ---
-from modules.auth import load_users, save_users, authenticate_user
-from modules.chat import load_messages, save_message
-
-# --- 2. DIRECT TAX IMPORTS ---
-from modules.direct_tax.tds_odoo import process_tds_odoo
-from modules.direct_tax.tds_zoho import process_tds_zoho
-from modules.direct_tax.tds_challan import analyze_for_challan, update_with_manual_challan
-from modules.direct_tax.reco_26as import process_26as_reco
-from modules.direct_tax import fixed_assets 
-
-# --- 3. COMPLIANCE IMPORT ---
-from modules.compliance import load_compliance_data, save_compliance_data
-
-# --- 4. INDIRECT TAX IMPORTS ---
-from modules.indirect_tax.gstr1_odoo import process_gstr1_odoo
-from modules.indirect_tax.gstr2b_odoo import process_gstr2b_odoo
-from modules.indirect_tax.gstr2b_zoho import process_gstr2b_zoho
-from modules.indirect_tax.gstr1_zoho import process_gstr1_zoho 
-from modules.indirect_tax.gstr2b_reco_engine import generate_reco_report
-from modules.indirect_tax.gstr2b_reco_zoho_engine import generate_reco_report_zoho
-
-app = Flask(__name__)
-CORS(app)
-
-UPLOAD_FOLDER = 'temp_uploads'
-OUTPUT_FOLDER = 'outputs'
-
-for folder in [UPLOAD_FOLDER, OUTPUT_FOLDER]:
-    if not os.path.exists(folder):
-        os.makedirs(folder)
-
-app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
-app.config['OUTPUT_FOLDER'] = OUTPUT_FOLDER
-
-@app.route('/')
-def home():
-    return jsonify({"message": "Tax Automation API is Running"})
-
-@app.route('/api/download/<filename>')
-def download_file(filename):
-    return send_from_directory(app.config['OUTPUT_FOLDER'], filename, as_attachment=True)
+import pandas as pd
+import numpy as np
+import re
+import logging
+from io import BytesIO
+from difflib import SequenceMatcher
+from xlsxwriter.utility import xl_col_to_name, xl_rowcol_to_cell
 
 # ==========================================
-#  AUTHENTICATION ROUTES
+#  CONFIGURATION
 # ==========================================
 
-@app.route('/api/auth/login', methods=['POST'])
-def login():
-    data = request.json
-    username = data.get('username')
-    password = data.get('password')
-    
-    result = authenticate_user(username, password)
-    
-    if result['success']:
-        return jsonify(result)
-    return jsonify(result), 401
+PORTAL_SHEETS_TO_IGNORE = [
+    "Read me", "ITC Available", "ITC not available", "ITC Reversal", "ITC Rejected"
+]
 
-@app.route('/api/auth/users', methods=['GET'])
-def get_users():
-    return jsonify(load_users())
-
-@app.route('/api/auth/users', methods=['POST'])
-def update_users():
-    data = request.json
-    if save_users(data):
-        return jsonify({"success": True})
-    return jsonify({"error": "Failed to save"}), 500
+RENAME_MAP = {
+    'Invoice number': 'Invoice Number', 'Note number': 'Invoice Number', 'Bill of entry number': 'Invoice Number',
+    'Invoice Value (₹)': 'Invoice Value', 'Taxable Value (₹)': 'Taxable Value',
+    'Integrated Tax (₹)': 'IGST Tax Amount', 'Central Tax (₹)': 'CGST Tax Amount', 'State/UT Tax (₹)': 'SGST Tax Amount',
+    'Cess Amount (₹)': 'Cess Amount', 'Trade/Legal name': 'Vendor Name', 'GSTIN of supplier': 'GSTIN',
+    'Invoice Date': 'Invoice date', 'Place of supply': 'Place Of Supply',
+    'Supply Attract Reverse Charge': 'Reverse Charge', 'Rate (%)': 'Rate'
+}
 
 # ==========================================
-#  CHAT ROUTES
+#  UTILITIES
 # ==========================================
 
-@app.route('/api/chat', methods=['GET'])
-def get_chat_messages():
-    return jsonify(load_messages())
+def clean_inv_str(s):
+    if pd.isna(s): return ""
+    return re.sub(r'[^a-zA-Z0-9]', '', str(s).lower())
 
-@app.route('/api/chat', methods=['POST'])
-def send_chat_message():
-    result = save_message(request.json)
-    return jsonify(result)
+def robust_safe_float(val):
+    if pd.isna(val) or val == '': return 0.0
+    try:
+        val_str = str(val).replace(',', '').strip()
+        return float(val_str)
+    except:
+        return 0.0
 
-@app.route('/api/chat/handle-request', methods=['POST'])
-def handle_access_request():
-    data = request.json
-    username = data.get('username')
-    action = data.get('action') # 'approve' or 'reject'
-    message_id = data.get('message_id')
+def clean_gstin(val):
+    if pd.isna(val): return ""
+    s = str(val).upper().strip().replace(" ", "").replace("-", "")
+    return s[:15] if len(s) >= 15 else s
 
-    if not username or not action:
-        return jsonify({"error": "Missing data"}), 400
+def clean_date_robust(val):
+    if pd.isna(val) or val == '': return None
+    try:
+        if isinstance(val, pd.Timestamp): return val.normalize()
+        return pd.to_datetime(val, dayfirst=True, errors='coerce').normalize()
+    except:
+        return None
 
-    # 1. Load Users
-    users = load_users()
-    user_found = False
+def get_similarity_score(a, b):
+    return SequenceMatcher(None, a, b).ratio()
+
+# ==========================================
+#  EXCEL WRITER HELPERS
+# ==========================================
+
+def add_formatting(writer, df, sheet_name):
+    if df.empty: return
+    df = df.loc[:, ~df.columns.duplicated()]
+    df.to_excel(writer, sheet_name=sheet_name, index=False)
+
+    workbook = writer.book
+    worksheet = writer.sheets[sheet_name]
+    (num_rows, num_cols) = df.shape
+
+    fmt_header = workbook.add_format({'bold': True, 'bg_color': '#D7E4BC', 'border': 1})
+    fmt_num = workbook.add_format({'bold': True, 'num_format': '#,##0.00'})
+    fmt_red = workbook.add_format({'bg_color': '#FFC7CE', 'font_color': '#9C0006'})
+    fmt_green = workbook.add_format({'bg_color': '#C6EFCE', 'font_color': '#006100'})
+    fmt_bold = workbook.add_format({'bold': True})
+
+    for col_num, value in enumerate(df.columns.values):
+        worksheet.write(0, col_num, value, fmt_header)
+        worksheet.set_column(col_num, col_num, 15)
+
+    if num_rows > 0:
+        worksheet.autofilter(0, 0, num_rows, num_cols - 1)
+
+    total_row = num_rows + 1
+    worksheet.write(total_row, 0, 'Filter Total', fmt_bold)
+
+    keywords_to_sum = ['taxable', 'igst', 'cgst', 'sgst', 'cess', 'total', 'difference', 'val', 'rate', 'integrated', 'central', 'state']
     
-    # 2. Update User Status (if Approve)
-    if action == 'approve':
-        for u in users:
-            if u['username'] == username:
-                u['status'] = 'Active'
-                user_found = True
-                break
-        if user_found:
-            save_users(users)
+    for col_idx, col_name in enumerate(df.columns):
+        c_name = str(col_name).lower()
+        if any(k in c_name for k in keywords_to_sum) and 'number' not in c_name and 'date' not in c_name:
+             col_letter = xl_col_to_name(col_idx)
+             worksheet.write_formula(total_row, col_idx, f'=SUBTOTAL(9,{col_letter}2:{col_letter}{total_row})', fmt_num)
+
+    if 'Remarks' in df.columns:
+        rem_idx = df.columns.get_loc('Remarks')
+        rem_letter = xl_col_to_name(rem_idx)
+        rng = f"{rem_letter}2:{rem_letter}{total_row}"
+        worksheet.conditional_format(rng, {'type': 'text', 'criteria': 'containing', 'value': 'Mismatch', 'format': fmt_red})
+        worksheet.conditional_format(rng, {'type': 'text', 'criteria': 'containing', 'value': 'Not', 'format': fmt_red})
+        worksheet.conditional_format(rng, {'type': 'text', 'criteria': 'containing', 'value': 'Match', 'format': fmt_green})
+
+# ==========================================
+#  DATA CLEANERS
+# ==========================================
+
+def clean_portal_data(file_content):
+    xls = pd.ExcelFile(file_content)
+    cleaned_sheets = {}
+    rcm_frames = []
     
-    # 3. Log the Action in Chat
-    system_msg = {
-        "username": "System",
-        "content": f"Access request for {username} was {action.upper()}D by Admin.",
-        "type": "system",
-        "related_message_id": message_id
+    conditional_delete = {
+        "B2B": 7, "B2B-CDNR": 7, "ECO": 7, "ISD": 7, "IMPG": 7, "IMPGSEZ": 7,
+        "B2B (ITC Reversal)": 7, "B2B-DNR": 7, "B2BA": 8, "B2B-CDNRA": 8
     }
-    save_message(system_msg)
 
-    return jsonify({"success": True, "message": f"User {action}d successfully."})
+    for sheet in xls.sheet_names:
+        sheet_clean = sheet.strip()
+        if sheet_clean in PORTAL_SHEETS_TO_IGNORE: continue
 
-# ==========================================
-#  TAX MODULE ROUTES
-# ==========================================
+        try:
+            df_raw = pd.read_excel(xls, sheet_name=sheet, header=None)
+            if sheet_clean in conditional_delete:
+                target_idx = conditional_delete[sheet_clean] - 1
+                if len(df_raw) <= target_idx or df_raw.iloc[target_idx].isna().all(): continue
 
-# --- DIRECT TAX ---
-@app.route('/api/direct-tax/tds-odoo', methods=['POST'])
-def run_tds_odoo():
-    if 'files' not in request.files: return jsonify({"error": "No file part"}), 400
-    files = request.files.getlist('files')
-    custom_name = request.form.get('custom_name', '')
-    saved_paths = []
-    try:
-        for file in files:
-            if file and file.filename != '':
-                filename = secure_filename(file.filename)
-                fp = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-                file.save(fp)
-                saved_paths.append(fp)
-        result = process_tds_odoo(saved_paths, app.config['OUTPUT_FOLDER'], custom_name)
-        return jsonify(result), (200 if result.get("success") else 500)
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 500
+            # Extract Header
+            header_idx = -1
+            search_terms = ['gstin of supplier', 'invoice number', 'note number']
+            for i in range(min(10, len(df_raw))):
+                row_str = " ".join(df_raw.iloc[i].astype(str).fillna('').values).lower()
+                if any(term in row_str for term in search_terms):
+                    header_idx = i; break
+            
+            if header_idx == -1: continue
 
-@app.route('/api/direct-tax/tds-zoho', methods=['POST'])
-def run_tds_zoho():
-    if 'files' not in request.files: return jsonify({"error": "No file part"}), 400
-    files = request.files.getlist('files')
-    custom_name = request.form.get('custom_name', '')
-    saved_paths = []
-    try:
-        for file in files:
-            if file and file.filename != '':
-                filename = secure_filename(file.filename)
-                fp = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-                file.save(fp)
-                saved_paths.append(fp)
-        result = process_tds_zoho(saved_paths, app.config['OUTPUT_FOLDER'], custom_name)
-        return jsonify(result), (200 if result.get("success") else 500)
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 500
+            df = df_raw.iloc[header_idx+1:].reset_index(drop=True)
+            df.columns = df_raw.iloc[header_idx].astype(str).str.strip().tolist()
 
-@app.route('/api/direct-tax/challan/analyze', methods=['POST'])
-def analyze_challan():
-    if 'file' not in request.files: return jsonify({"error": "No file uploaded"}), 400
-    file = request.files['file']
-    filename = secure_filename(file.filename)
-    filepath = os.path.join(app.config['UPLOAD_FOLDER'], f"TEMP_CHALLAN_{filename}")
-    file.save(filepath)
-    result = analyze_for_challan(filepath)
-    if result.get("success"):
-        result['temp_file_path'] = filepath 
-        return jsonify(result), 200
-    else:
-        return jsonify(result), 500
+            # Rename
+            final_cols = []
+            for col in df.columns:
+                mapped = col
+                for k, v in RENAME_MAP.items():
+                    if k.lower() == str(col).lower().strip(): mapped = v; break
+                final_cols.append(mapped)
+            df.columns = final_cols
 
-@app.route('/api/direct-tax/challan/update', methods=['POST'])
-def update_challan():
-    data = request.json
-    file_path = data.get('file_path')
-    user_inputs = data.get('inputs')
-    custom_name = data.get('custom_name', '')
-    if not file_path or not os.path.exists(file_path):
-        return jsonify({"error": "Session expired. Please upload file again."}), 400
-    base_name = os.path.basename(file_path)
-    original_name = base_name.replace("TEMP_CHALLAN_", "")
-    result = update_with_manual_challan(file_path, user_inputs, app.config['OUTPUT_FOLDER'], custom_name, original_name)
-    if os.path.exists(file_path): os.remove(file_path)
-    if result.get("success"): return jsonify(result), 200
-    else: return jsonify(result), 500
+            # Cleanup
+            df = df.loc[:, ~df.columns.duplicated()]
+            numeric_cols = ['Taxable Value', 'Invoice Value', 'IGST Tax Amount', 'CGST Tax Amount', 'SGST Tax Amount', 'Cess Amount']
+            for col in numeric_cols:
+                if col in df.columns: df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
 
-@app.route('/api/direct-tax/26as-reco', methods=['POST'])
-def run_26as_reco():
-    portal_file = request.files.get('portal_file')
-    book_file = request.files.get('book_file')
-    custom_name = request.form.get('custom_name', '')
+            # RCM Separation
+            if 'Reverse Charge' in df.columns:
+                is_rcm = df['Reverse Charge'].astype(str).str.strip().str.lower().isin(['yes', 'y'])
+                if is_rcm.any():
+                    rcm_data = df[is_rcm].copy(); rcm_data['Source'] = sheet
+                    rcm_frames.append(rcm_data); df = df[~is_rcm]
 
-    if not portal_file:
-        return jsonify({"error": "Please upload the 26AS Text File."}), 400
-        
-    try:
-        p_filename = secure_filename(portal_file.filename)
-        p_path = os.path.join(app.config['UPLOAD_FOLDER'], p_filename)
-        portal_file.save(p_path)
-        
-        b_path = None
-        if book_file:
-            b_filename = secure_filename(book_file.filename)
-            b_path = os.path.join(app.config['UPLOAD_FOLDER'], b_filename)
-            book_file.save(b_path)
-
-        result = process_26as_reco(p_path, b_path, app.config['OUTPUT_FOLDER'], custom_name)
-        
-        # Cleanup
-        if os.path.exists(p_path): os.remove(p_path)
-        if b_path and os.path.exists(b_path): os.remove(b_path)
-
-        return jsonify(result), (200 if result.get("success") else 500)
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 500
-
-# --- COMPLIANCE ---
-@app.route('/api/compliance', methods=['GET'])
-def get_compliance():
-    user_id = request.args.get('user_id')
-    data = load_compliance_data(user_id)
-    return jsonify(data)
-
-@app.route('/api/compliance', methods=['POST'])
-def update_compliance():
-    data = request.json
-    user_id = data.get('user_id')
-    clients = data.get('clients')
+            cleaned_sheets[sheet] = df
+        except Exception: continue
     
-    if not user_id:
-        return jsonify({"error": "User ID is required"}), 400
+    if rcm_frames: cleaned_sheets['RCM Combined'] = pd.concat(rcm_frames, ignore_index=True)
+    return cleaned_sheets
+
+def clean_zoho_data(file_content):
+    xls = pd.ExcelFile(file_content)
+    SHEETS_TO_DELETE = ['imp', 'imp_services', 'nil,exempt,non-gst,composition', 'hsn', 'advance paid', 'advance adjusted', 'docs']
+    sheet_map = {}
+
+    for sheet_name in xls.sheet_names:
+        sheet_lower = sheet_name.lower().strip()
+        if any(x in sheet_lower for x in SHEETS_TO_DELETE): continue
+        try:
+            df = pd.read_excel(xls, sheet_name=sheet_name, header=1)
+            if df.empty: continue
+            df = df.dropna(how='all', axis=0).dropna(how='all', axis=1)
+            
+            # Validation
+            if 'Invoice Number' in df.columns:
+                if df['Invoice Number'].dropna().empty: continue
+                last_idx = df['Invoice Number'].last_valid_index()
+                if last_idx is not None: df = df.iloc[:last_idx + 1]
+            elif 'Taxable Value' not in df.columns: continue
+
+            sheet_map[sheet_lower] = {'original_name': sheet_name, 'df': df}
+        except: continue
+
+    # Remove RCM invoices from B2B if present
+    if 'b2b' in sheet_map and 'reverse charge' in sheet_map:
+        b2b_df = sheet_map['b2b']['df']
+        rcm_df = sheet_map['reverse charge']['df']
+        if 'Invoice Number' in b2b_df.columns and 'Invoice Number' in rcm_df.columns:
+            rcm_invoices = rcm_df['Invoice Number'].unique()
+            clean_b2b = b2b_df[~b2b_df['Invoice Number'].isin(rcm_invoices)].copy()
+            if clean_b2b.empty: del sheet_map['b2b']
+            else: sheet_map['b2b']['df'] = clean_b2b
+    return sheet_map
+
+# ==========================================
+#  RECONCILIATION LOGIC
+# ==========================================
+
+def generate_lookup_maps(dataset):
+    candidates = [] 
+    for key, val in dataset.items():
+        df = val if isinstance(val, pd.DataFrame) else val['df']
+        col_inv = 'Invoice Number'
+        if col_inv not in df.columns: continue
         
-    result = save_compliance_data(user_id, clients)
-    return jsonify(result)
+        col_tax = next((c for c in df.columns if 'Taxable' in c), None)
+        if not col_tax: continue
 
-# --- INDIRECT TAX ---
-@app.route('/api/indirect-tax/gstr1-odoo', methods=['POST'])
-def run_gstr1_odoo():
-    if 'files' not in request.files: return jsonify({"error": "No file part"}), 400
-    files = request.files.getlist('files')
-    custom_name = request.form.get('custom_name', '')
-    saved_paths = []
-    try:
-        for file in files:
-            if file and file.filename != '':
-                filename = secure_filename(file.filename)
-                fp = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-                file.save(fp)
-                saved_paths.append(fp)
-        result = process_gstr1_odoo(saved_paths, app.config['OUTPUT_FOLDER'], custom_name)
-        return jsonify(result), (200 if result.get("success") else 500)
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 500
-
-@app.route('/api/indirect-tax/gstr2b-odoo', methods=['POST'])
-def run_gstr2b_odoo():
-    custom_name = request.form.get('custom_name', '')
-    slot_keys = ['regular_cgst', 'regular_igst', 'rcm_cgst', 'rcm_igst']
-    file_paths_dict = {}
-    try:
-        for key in slot_keys:
-            if key in request.files:
-                file = request.files[key]
-                if file and file.filename != '':
-                    filename = secure_filename(f"{key}_{file.filename}")
-                    fp = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-                    file.save(fp)
-                    file_paths_dict[key] = fp
-        if not file_paths_dict: return jsonify({"error": "No files uploaded"}), 400
-        result = process_gstr2b_odoo(file_paths_dict, app.config['OUTPUT_FOLDER'], custom_name)
-        return jsonify(result), (200 if result.get("success") else 500)
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 500
-
-@app.route('/api/indirect-tax/gstr2b-zoho', methods=['POST'])
-def run_gstr2b_zoho():
-    if 'file' not in request.files: return jsonify({"error": "No file part"}), 400
-    file = request.files['file']
-    custom_name = request.form.get('custom_name', '')
-    try:
-        if file and file.filename != '':
-            filename = secure_filename(file.filename)
-            fp = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-            file.save(fp)
-            result = process_gstr2b_zoho(fp, app.config['OUTPUT_FOLDER'], custom_name)
-            return jsonify(result), (200 if result.get("success") else 500)
-        return jsonify({"error": "File invalid"}), 400
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 500
-
-@app.route('/api/indirect-tax/gstr1-zoho', methods=['POST'])
-def run_gstr1_zoho():
-    slot_keys = ['file_invoice_details', 'file_credit_note_details', 'file_invoice_credit_notes', 'file_export_invoices']
-    file_paths_dict = {}
-    custom_name = request.form.get('custom_name', '')
-    try:
-        for key in slot_keys:
-            if key in request.files:
-                file = request.files[key]
-                if file and file.filename != '':
-                    filename = secure_filename(f"{key}_{file.filename}")
-                    fp = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-                    file.save(fp)
-                    file_paths_dict[key] = fp
+        col_gstin = next((c for c in df.columns if 'gstin' in c.lower()), None)
         
-        if not file_paths_dict:
-            return jsonify({"error": "No valid files uploaded."}), 400
+        def find_fin_col(keywords): return next((c for c in df.columns if any(k in c.lower() for k in keywords)), None)
+        col_igst, col_cgst, col_sgst = find_fin_col(['igst']), find_fin_col(['cgst']), find_fin_col(['sgst'])
 
-        result = process_gstr1_zoho(file_paths_dict, app.config['OUTPUT_FOLDER'], custom_name)
-        return jsonify(result), (200 if result.get("success") else 500)
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 500
+        for idx, row in df.iterrows():
+            candidates.append({
+                'id': f"{key}_{idx}", 'used': False,
+                'clean_inv': clean_inv_str(str(row[col_inv]).strip()),
+                'raw_inv': str(row[col_inv]).strip(),
+                'tax_val': robust_safe_float(row[col_tax]), 
+                'gstin': clean_gstin(row[col_gstin]) if col_gstin else "",
+                'igst': robust_safe_float(row[col_igst]) if col_igst else 0.0,
+                'cgst': robust_safe_float(row[col_cgst]) if col_cgst else 0.0,
+                'sgst': robust_safe_float(row[col_sgst]) if col_sgst else 0.0
+            })
+    return candidates
 
-# --- GSTR-2B MASTER RECONCILIATION ROUTE (FIXED) ---
-@app.route('/api/indirect-tax/reco-gstr2b', methods=['POST'])
-def reco_gstr2b_route():
-    try:
-        # 1. Check Portal File
-        if 'file_portal' not in request.files:
-            return jsonify({'error': 'Portal file is missing.'}), 400
+def reconcile_dataframe(df, candidates, target_col_name, is_portal_sheet, reco_month_dt=None):
+    df[target_col_name] = 0.0; df['Difference'] = 0.0; df['Remarks'] = ''; df['__matched__'] = False 
+    col_inv = 'Invoice Number'; col_tax = 'Taxable Value'
+    if col_inv not in df.columns: return df
+    
+    col_gstin = next((c for c in df.columns if 'gstin' in c.lower()), None)
+    col_date = next((c for c in df.columns if 'date' in c.lower() and 'invoice' in c.lower()), None)
+
+    # Clean Date
+    if col_date: df[col_date] = df[col_date].apply(clean_date_robust)
+
+    # Exact Match Index
+    exact_match_index = {}
+    for i, cand in enumerate(candidates):
+        key = (cand['clean_inv'], cand['tax_val'], cand['gstin'])
+        if key not in exact_match_index: exact_match_index[key] = []
+        exact_match_index[key].append(i)
+
+    def write_match(idx, r_tax, cand, remark):
+        df.at[idx, target_col_name] = cand['tax_val'] if cand else r_tax
+        df.at[idx, 'Difference'] = r_tax - (cand['tax_val'] if cand else r_tax)
+        df.at[idx, 'Remarks'] = remark
+        df.at[idx, '__matched__'] = True
+        if cand: cand['used'] = True
+
+    # 1. Exact Match
+    for idx, row in df.iterrows():
+        inv = clean_inv_str(row.get(col_inv)); tax = robust_safe_float(row.get(col_tax)); gst = clean_gstin(row.get(col_gstin)) if col_gstin else ""
+        if not inv: continue
+        key = (inv, tax, gst)
+        if key in exact_match_index:
+            for cand_idx in exact_match_index[key]:
+                cand = candidates[cand_idx]
+                if not cand['used']: write_match(idx, tax, cand, "Match"); break
+    
+    # 2. Fuzzy / Typo Matches
+    for idx, row in df.iterrows():
+        if df.at[idx, '__matched__']: continue
+        inv = clean_inv_str(row.get(col_inv)); tax = robust_safe_float(row.get(col_tax)); gst = clean_gstin(row.get(col_gstin)) if col_gstin else ""
+        if not inv: continue
         
-        file_portal = request.files['file_portal']
+        for cand in candidates:
+            if cand['used']: continue
+            if abs(tax - cand['tax_val']) > 2.0: continue
+            if gst and cand['gstin'] and gst != cand['gstin']: continue
+            
+            # Typo or Fuzzy
+            if get_similarity_score(inv, cand['clean_inv']) > 0.85:
+                write_match(idx, tax, cand, "Match(Typo)"); break
+            
+            c_inv, r_inv = cand['clean_inv'], inv
+            if (len(r_inv)>3 and len(c_inv)>3) and ((r_inv in c_inv) or (c_inv in r_inv)):
+                write_match(idx, tax, cand, "Match(Fuzzy)"); break
 
-        # 2. Check Odoo Files (The 4 slots)
-        odoo_files = {
-            'odoo_reg_cgst': request.files.get('odoo_reg_cgst'),
-            'odoo_reg_igst': request.files.get('odoo_reg_igst'),
-            'odoo_rcm_cgst': request.files.get('odoo_rcm_cgst'),
-            'odoo_rcm_igst': request.files.get('odoo_rcm_igst')
+    # Cleanup
+    for idx, row in df.iterrows():
+        if not df.at[idx, '__matched__']:
+            df.at[idx, 'Difference'] = robust_safe_float(row.get(col_tax))
+            remark = "Not in Books" if is_portal_sheet else "Not on Portal"
+            if is_portal_sheet and reco_month_dt and col_date:
+                curr_date = clean_date_robust(row[col_date])
+                if pd.notnull(curr_date) and curr_date < reco_month_dt: remark = "Previous Period Inv"
+            df.at[idx, 'Remarks'] = remark
+            
+    df.drop(columns=['__matched__'], inplace=True, errors='ignore')
+    return df
+
+# ==========================================
+#  MASTER DASHBOARD GENERATOR
+# ==========================================
+
+def calculate_smart_offset(liability, credit):
+    """Section 49 Payment Logic"""
+    L = liability.copy(); C = credit.copy()
+    paid = {'i_i':0, 'i_c':0, 'i_s':0, 'c_c':0, 'c_i':0, 's_s':0, 's_i':0}
+    
+    # IGST Credit
+    use = min(L['i'], C['i']); paid['i_i'] = use; L['i'] -= use; C['i'] -= use
+    if C['i'] > 0: use = min(L['c'], C['i']); paid['i_c'] = use; L['c'] -= use; C['i'] -= use
+    if C['i'] > 0: use = min(L['s'], C['i']); paid['i_s'] = use; L['s'] -= use; C['i'] -= use
+    
+    # CGST Credit
+    if L['c'] > 0 and C['c'] > 0: use = min(L['c'], C['c']); paid['c_c'] = use; L['c'] -= use; C['c'] -= use
+    if L['i'] > 0 and C['c'] > 0: use = min(L['i'], C['c']); paid['c_i'] = use; L['i'] -= use; C['c'] -= use
+
+    # SGST Credit
+    if L['s'] > 0 and C['s'] > 0: use = min(L['s'], C['s']); paid['s_s'] = use; L['s'] -= use; C['s'] -= use
+    if L['i'] > 0 and C['s'] > 0: use = min(L['i'], C['s']); paid['s_i'] = use; L['i'] -= use; C['s'] -= use
+    return paid
+
+def generate_master_dashboard(writer, portal_dict, books_dict, manual_inputs):
+    # 1. Calculate RCM and ITC
+    sums = {'all_other': {'i':0,'c':0,'s':0}, 'rcm_reg': {'i':0,'c':0,'s':0}, 'rcm_urd': {'i':0,'c':0,'s':0}}
+    
+    def get_t(row, df):
+        def f(k): return next((c for c in df.columns if any(x in c.lower() for x in k)), None)
+        ci, cc, cs = f(['igst']), f(['cgst']), f(['sgst'])
+        return robust_safe_float(row.get(ci)), robust_safe_float(row.get(cc)), robust_safe_float(row.get(cs))
+
+    for name, df in portal_dict.items():
+        col_rcm = next((c for c in df.columns if 'reverse' in c.lower()), None)
+        is_cn = 'cdnr' in name.lower() or 'credit' in name.lower()
+        mult = -1 if is_cn else 1
+        for _, r in df.iterrows():
+            if is_cn and "Not in Books" in str(r.get('Remarks', '')): continue
+            i, c, s = get_t(r, df)
+            if str(r.get(col_rcm, '')).lower() in ['y', 'yes']:
+                sums['rcm_reg']['i'] += i*mult; sums['rcm_reg']['c'] += c*mult; sums['rcm_reg']['s'] += s*mult
+            else:
+                sums['all_other']['i'] += i*mult; sums['all_other']['c'] += c*mult; sums['all_other']['s'] += s*mult
+
+    tot_rcm = {k: sums['rcm_reg'][k] for k in ['i','c','s']} # Simplified for brevity
+    net_itc = {k: tot_rcm[k] + sums['all_other'][k] for k in ['i','c','s']}
+
+    # 2. Offset
+    sales = manual_inputs.get('sales', {'igst':0, 'cgst':0, 'sgst':0})
+    op = manual_inputs.get('opening', {'igst':0, 'cgst':0, 'sgst':0})
+    
+    L_fwd = {'i': sales['igst'], 'c': sales['cgst'], 's': sales['sgst']}
+    C_avail = {'i': op['igst'] + net_itc['i'], 'c': op['cgst'] + net_itc['c'], 's': op['sgst'] + net_itc['s']}
+    
+    paid = calculate_smart_offset(L_fwd, C_avail)
+
+    # 3. Write Data
+    data = []
+    def r(d, s, i, c, sg): data.append([d, s, i, c, sg, i+c+sg])
+    r("OUTPUT LIABILITY", "", 0, 0, 0)
+    r("1. Sales", "", sales['igst'], sales['cgst'], sales['sgst'])
+    r("OFFSET SUMMARY", "", 0, 0, 0)
+    r("Paid by IGST", "", paid['i_i'], paid['i_c'], paid['i_s'])
+    
+    df = pd.DataFrame(data, columns=["Particulars", "Details", "IGST", "CGST", "SGST", "Total"])
+    add_formatting(writer, df, "Master Dashboard")
+
+def generate_vendor_summary(writer, portal_dict, books_dict):
+    stats = {}
+    def process(d_dict, source):
+        for name, data in d_dict.items():
+            df = data if isinstance(data, pd.DataFrame) else data['df']
+            col_gst = next((c for c in df.columns if 'gstin' in c.lower()), None)
+            col_tax = next((c for c in df.columns if 'taxable' in c.lower()), None)
+            if not col_gst or not col_tax: continue
+            
+            for _, r in df.iterrows():
+                gst = clean_gstin(r[col_gst])
+                if not gst: continue
+                if gst not in stats: stats[gst] = {'p':0.0, 'b':0.0}
+                val = robust_safe_float(r[col_tax])
+                if source == 'portal': stats[gst]['p'] += val
+                else: stats[gst]['b'] += val
+
+    process(portal_dict, 'portal')
+    process(books_dict, 'books')
+    
+    summ = [[g, d['p'], d['b'], d['b']-d['p']] for g, d in stats.items()]
+    df_s = pd.DataFrame(summ, columns=['GSTIN', 'Portal Taxable', 'Books Taxable', 'Difference'])
+    add_formatting(writer, df_s, "Vendor Summary")
+
+def get_smart_sorted_order(portal_dict, books_dict):
+    final = []; used = set()
+    bk = list(books_dict.keys())
+    def clean(n): return n.lower().replace(" ", "").replace("-", "").replace("_", "").replace("(portal)", "").replace("(books)", "")
+    
+    for p_name, p_df in portal_dict.items():
+        best = None; p_cl = clean(p_name)
+        for b in bk:
+            if b in used: continue
+            if p_cl == clean(b): best = b; break
+        final.append((f"{p_name[:20]} (Portal)", p_df))
+        if best:
+            final.append((f"{best[:20]} (Books)", books_dict[best]['df'])); used.add(best)
+    
+    for b, data in books_dict.items():
+        if b not in used: final.append((f"{b[:20]} (Books)", data['df']))
+    return final
+
+# ==========================================
+#  MAIN ENTRY POINT (API INTEGRATION)
+# ==========================================
+
+def generate_reco_report_zoho(file_portal, file_zoho, month_str=None, manual_inputs=None):
+    """
+    Main entry point for integration.
+    Args:
+        file_portal: File object or path for Portal Excel
+        file_zoho: File object or path for Zoho Excel
+        month_str: String 'YYYY-MM'
+        manual_inputs: Dictionary (Optional) with 'sales' and 'opening' keys
+    """
+    output = BytesIO()
+    reco_dt = pd.to_datetime(month_str + "-01") if month_str else None
+    
+    # Default inputs if not provided (Handling Legacy Calls)
+    if manual_inputs is None:
+        manual_inputs = {
+            'sales': {'taxable':0, 'igst':0, 'cgst':0, 'sgst':0},
+            'opening': {'igst':0, 'cgst':0, 'sgst':0}
         }
 
-        # Ensure at least one Odoo file was uploaded
-        if not any(f for f in odoo_files.values() if f and f.filename != ''):
-            return jsonify({'error': 'Please upload at least one Odoo register file.'}), 400
+    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+        try:
+            # 1. Clean Data
+            portal_data = clean_portal_data(file_portal)
+            zoho_data = clean_zoho_data(file_zoho)
 
-        # 3. Call the Engine
-        excel_file = generate_reco_report(file_portal, odoo_files)
+            # 2. Generate Maps
+            books_maps = generate_lookup_maps(zoho_data)
+            portal_maps = generate_lookup_maps(portal_data)
 
-        # 4. Return Result
-        return send_file(
-            excel_file,
-            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-            download_name='Odoo_Portal_Reco.xlsx',
-            as_attachment=True
-        )
+            # 3. Process
+            processed_portal = {s: reconcile_dataframe(df, books_maps, 'As per Books', True, reco_dt) for s, df in portal_data.items()}
+            for key, data in zoho_data.items():
+                data['df'] = reconcile_dataframe(data['df'], portal_maps, 'As per Portal', False, None)
 
-    except Exception as e:
-        print(f"GSTR-2B Reco Error: {e}") # Log to terminal
-        return jsonify({'error': str(e)}), 500
+            # 4. Generate Summaries
+            generate_master_dashboard(writer, processed_portal, zoho_data, manual_inputs)
+            generate_vendor_summary(writer, processed_portal, zoho_data)
 
-# --- DEPRECIATION CALCULATOR ROUTE ---
-@app.route('/api/fixed-assets/calculate', methods=['POST'])
-def calculate_fixed_assets():
-    try:
-        if 'file_assets' not in request.files:
-            return jsonify({'error': 'Please upload the Asset Excel file.'}), 400
-        
-        file_assets = request.files['file_assets']
-        
-        # Call the engine from the imported module
-        excel_output = fixed_assets.calculate_depreciation_engine(file_assets)
-        
-        return send_file(
-            excel_output,
-            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-            download_name='Fixed_Asset_Register.xlsx',
-            as_attachment=True
-        )
+            # 5. Write Details
+            sorted_sheets = get_smart_sorted_order(processed_portal, zoho_data)
+            for sheet_name, df in sorted_sheets:
+                add_formatting(writer, df, sheet_name)
+                
+        except Exception as e:
+            logging.error(f"Error in Max Reco Module: {e}")
+            raise e
 
-    except Exception as e:
-        # Log error if you have a logger, otherwise just return
-        print(f"FAR Error: {e}")
-        return jsonify({'error': str(e)}), 500
-    # --- GSTR-2B RECO (ZOHO vs PORTAL) ---
-@app.route('/api/indirect-tax/reco-gstr2b-zoho', methods=['POST'])
-def reco_gstr2b_zoho_route():
-    try:
-        if 'file_portal' not in request.files or 'file_zoho' not in request.files:
-            return jsonify({'error': 'Both Portal and Zoho files are required.'}), 400
-
-        file_portal = request.files['file_portal']
-        file_zoho = request.files['file_zoho']
-
-        # Call the Zoho Engine
-        excel_file = generate_reco_report_zoho(file_portal, file_zoho)
-
-        return send_file(
-            excel_file,
-            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-            download_name='Zoho_Portal_Reco.xlsx',
-            as_attachment=True
-        )
-
-    except Exception as e:
-        print(f"Zoho Reco Error: {e}")
-        return jsonify({'error': str(e)}), 500
-    
-if __name__ == '__main__':
-    app.run(debug=True, port=5000)
+    output.seek(0)
+    return output
