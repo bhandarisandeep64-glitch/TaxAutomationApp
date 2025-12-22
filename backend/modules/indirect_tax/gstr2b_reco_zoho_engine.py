@@ -3,44 +3,15 @@ import numpy as np
 import re
 import logging
 from io import BytesIO
-from difflib import SequenceMatcher
-from xlsxwriter.utility import xl_col_to_name, xl_rowcol_to_cell
+from xlsxwriter.utility import xl_col_to_name
 
 # ==========================================
-#  CONFIGURATION & SETTINGS
-# ==========================================
-
-PORTAL_SHEETS_TO_IGNORE = [
-    "Read me", "ITC Available", "ITC not available", "ITC Reversal", "ITC Rejected"
-]
-
-ZOHO_SHEETS_TO_IGNORE = [
-    'imp', 'imp_services', 'nil,exempt,non-gst,composition', 'hsn', 'advance paid', 'advance adjusted', 'docs'
-]
-
-RENAME_MAP = {
-    'Invoice number': 'Invoice Number', 'Note number': 'Invoice Number', 'Bill of entry number': 'Invoice Number',
-    'Invoice Value (₹)': 'Invoice Value', 'Taxable Value (₹)': 'Taxable Value',
-    'Integrated Tax (₹)': 'IGST Tax Amount', 'Central Tax (₹)': 'CGST Tax Amount', 'State/UT Tax (₹)': 'SGST Tax Amount',
-    'Cess Amount (₹)': 'Cess Amount', 'Trade/Legal name': 'Vendor Name', 'GSTIN of supplier': 'GSTIN',
-    'Invoice Date': 'Invoice date', 'Place of supply': 'Place Of Supply',
-    'Supply Attract Reverse Charge': 'Reverse Charge', 'Rate (%)': 'Rate'
-}
-
-# ==========================================
-#  UTILITIES
+#  SECTION 1: SHARED UTILITIES & FORMATTING
 # ==========================================
 
 def clean_inv_str(s):
-    """Standardizes invoice numbers: lowercase, removes special chars."""
     if pd.isna(s): return ""
     return re.sub(r'[^a-zA-Z0-9]', '', str(s).lower())
-
-def safe_float(val):
-    try:
-        return float(val) if pd.notnull(val) else 0.0
-    except:
-        return 0.0
 
 def robust_safe_float(val):
     if pd.isna(val) or val == '': return 0.0
@@ -55,483 +26,339 @@ def clean_gstin(val):
     s = str(val).upper().strip().replace(" ", "").replace("-", "")
     return s[:15] if len(s) >= 15 else s
 
-def clean_date_robust(val):
-    if pd.isna(val) or val == '': return None
-    try:
-        if isinstance(val, pd.Timestamp): return val.normalize()
-        return pd.to_datetime(val, dayfirst=True, errors='coerce').normalize()
-    except:
-        return None
-
-def get_similarity_score(a, b):
-    return SequenceMatcher(None, a, b).ratio()
-
-# ==========================================
-#  EXCEL WRITER LOGIC
-# ==========================================
-
-def add_formatting(writer, df, sheet_name):
-    if df.empty: return
+def add_formatting_and_subtotals(writer, df, sheet_name):
+    """
+    Advanced formatting from the standalone app: 
+    Adds Subtotals, Filters, and Conditional Formatting.
+    """
+    if df.empty: return 
     
-    # Safety: Drop duplicate columns before writing to avoid Excel confusion
+    # Safety: Drop duplicate columns
     df = df.loc[:, ~df.columns.duplicated()]
     
+    # Write dataframe
     df.to_excel(writer, sheet_name=sheet_name, index=False)
-
+    
     workbook = writer.book
     worksheet = writer.sheets[sheet_name]
     (num_rows, num_cols) = df.shape
 
-    # Define Formats
-    fmt_header = workbook.add_format({'bold': True, 'bg_color': '#D7E4BC', 'border': 1})
-    fmt_num = workbook.add_format({'bold': True, 'num_format': '#,##0.00'})
-    fmt_red = workbook.add_format({'bg_color': '#FFC7CE', 'font_color': '#9C0006'})
-    fmt_green = workbook.add_format({'bg_color': '#C6EFCE', 'font_color': '#006100'})
-    fmt_bold = workbook.add_format({'bold': True})
-
-    # Apply Header Formatting
+    # Formats
+    header_format = workbook.add_format({'bold': True, 'bg_color': '#D7E4BC', 'border': 1})
+    bold_format = workbook.add_format({'bold': True})
+    number_format = workbook.add_format({'bold': True, 'num_format': '#,##0.00'})
+    red_format = workbook.add_format({'bg_color': '#FFC7CE', 'font_color': '#9C0006'}) 
+    green_format = workbook.add_format({'bg_color': '#C6EFCE', 'font_color': '#006100'}) 
+    
     for col_num, value in enumerate(df.columns.values):
-        worksheet.write(0, col_num, value, fmt_header)
+        worksheet.write(0, col_num, value, header_format)
         worksheet.set_column(col_num, col_num, 15)
 
-    # Apply Autofilter
     if num_rows > 0:
         worksheet.autofilter(0, 0, num_rows, num_cols - 1)
 
-    # Add Filter Totals Row
     total_row = num_rows + 1
-    worksheet.write(total_row, 0, 'Filter Total', fmt_bold)
-
-    # Add Subtotals for Financial Columns
-    keywords_to_sum = ['taxable', 'igst', 'cgst', 'sgst', 'cess', 'total', 'difference', 'val', 'rate', 'integrated', 'central', 'state']
+    worksheet.write(total_row, 0, 'Filter Total', bold_format)
     
-    for col_idx, col_name in enumerate(df.columns):
-        c_name = str(col_name).lower()
-        
-        # 1. Must contain a financial keyword
-        # 2. Must NOT be an ID, Date, or Number (like Invoice Number)
-        if any(k in c_name for k in keywords_to_sum) and 'number' not in c_name and 'date' not in c_name and 'id' not in c_name:
-             col_letter = xl_col_to_name(col_idx)
-             # Formula: =SUBTOTAL(9, C2:C100)
-             worksheet.write_formula(total_row, col_idx, f'=SUBTOTAL(9,{col_letter}2:{col_letter}{total_row})', fmt_num)
-
-    # Apply Conditional Formatting (Red/Green)
+    # Subtotals for key columns
+    target_cols = [
+        'Taxable Value', 'Invoice Value', 'IGST Tax Amount', 'CGST Tax Amount', 'SGST Tax Amount', 'Cess Amount',
+        'IGST', 'CGST', 'SGST', 'Cess', 'Total', 'Taxable Amt.', 'Debit', 'Credit',
+        'As per Portal', 'As per Books', 'Difference'
+    ]
+    
+    for col_name in target_cols:
+        if col_name in df.columns:
+            col_idx = df.columns.get_loc(col_name)
+            col_letter = xl_col_to_name(col_idx)
+            formula = f'=SUBTOTAL(9,{col_letter}2:{col_letter}{total_row})'
+            worksheet.write_formula(total_row, col_idx, formula, number_format)
+            
+    # Conditional Formatting for Remarks
     if 'Remarks' in df.columns:
         rem_idx = df.columns.get_loc('Remarks')
         rem_letter = xl_col_to_name(rem_idx)
-        rng = f"{rem_letter}2:{rem_letter}{total_row}"
-        
-        # Red for Mismatch or Not Found
-        worksheet.conditional_format(rng, {'type': 'text', 'criteria': 'containing', 'value': 'Mismatch', 'format': fmt_red})
-        worksheet.conditional_format(rng, {'type': 'text', 'criteria': 'containing', 'value': 'Not', 'format': fmt_red})
-        
-        # Green for Match
-        worksheet.conditional_format(rng, {'type': 'text', 'criteria': 'containing', 'value': 'Match', 'format': fmt_green})
+        range_str = f"{rem_letter}2:{rem_letter}{total_row}"
+        worksheet.conditional_format(range_str, {'type': 'text', 'criteria': 'containing', 'value': 'Not', 'format': red_format})
+        worksheet.conditional_format(range_str, {'type': 'text', 'criteria': 'containing', 'value': 'Mismatch', 'format': red_format})
+        worksheet.conditional_format(range_str, {'type': 'text', 'criteria': 'containing', 'value': 'Match', 'format': green_format})
 
 # ==========================================
-#  PORTAL CLEANER
+#  SECTION 2: PORTAL CLEANING (ADVANCED)
 # ==========================================
 
-def clean_portal_data(file_content):
-    xls = pd.ExcelFile(file_content)
-    cleaned_sheets = {}
-    rcm_frames = []
-    
-    conditional_delete = {
+def filter_portal_sheets(xls):
+    """Smart filtering of portal sheets to avoid junk tabs."""
+    sheets_to_delete_always = ["Read me", "ITC Available", "ITC not available", "ITC Reversal", "ITC Rejected"]
+    conditional_delete_map = {
         "B2B": 7, "B2B-CDNR": 7, "ECO": 7, "ISD": 7, "IMPG": 7, "IMPGSEZ": 7,
         "B2B (ITC Reversal)": 7, "B2B-DNR": 7, "B2BA": 8, "B2B-CDNRA": 8
     }
-
+    kept_dataframes = {}
     for sheet in xls.sheet_names:
         sheet_clean = sheet.strip()
-        if sheet_clean in PORTAL_SHEETS_TO_IGNORE: continue
-
+        if sheet_clean in sheets_to_delete_always: continue
         try:
-            df_raw = pd.read_excel(xls, sheet_name=sheet, header=None)
-            
-            # Empty Check specific to GSTR
-            if sheet_clean in conditional_delete:
-                target_idx = conditional_delete[sheet_clean] - 1
-                if len(df_raw) <= target_idx or df_raw.iloc[target_idx].isna().all(): continue
+            df = pd.read_excel(xls, sheet_name=sheet, header=None)
+            if sheet_clean in conditional_delete_map:
+                target_idx = conditional_delete_map[sheet_clean] - 1
+                if len(df) <= target_idx or df.iloc[target_idx].isna().all(): continue
+            kept_dataframes[sheet] = df
+        except: continue
+    return kept_dataframes
 
-            df = _extract_header_dynamically(df_raw)
-            if df.empty: continue
-
-            # Separate RCM
-            if 'Reverse Charge' in df.columns:
-                is_rcm = df['Reverse Charge'].astype(str).str.strip().str.lower().isin(['yes', 'y'])
-                if is_rcm.any():
-                    rcm_data = df[is_rcm].copy()
-                    rcm_data['Source'] = sheet
-                    rcm_frames.append(rcm_data)
-                    df = df[~is_rcm]
-
-            cleaned_sheets[sheet] = df
-
-        except Exception as e:
-            logging.error(f"Error processing Portal sheet {sheet}: {e}")
-            continue
-    
-    if rcm_frames:
-        cleaned_sheets['RCM Combined'] = pd.concat(rcm_frames, ignore_index=True)
-
-    return cleaned_sheets
-
-def _extract_header_dynamically(df_raw):
+def clean_portal_df(df_raw, sheet_name):
+    # 1. Header Logic
     header_idx = -1
     search_terms = ['gstin of supplier', 'invoice number', 'note number', 'bill of entry number']
-    
     for i in range(min(10, len(df_raw))):
         row_str = " ".join(df_raw.iloc[i].astype(str).fillna('').values).lower()
         if any(term in row_str for term in search_terms):
             header_idx = i; break
-    
     if header_idx == -1: return pd.DataFrame()
 
     df_data = df_raw.iloc[header_idx+1:].reset_index(drop=True)
     row1 = df_raw.iloc[header_idx].astype(str).replace('nan', '').str.strip().tolist()
     
+    # Handle multi-row headers if present
     if header_idx + 1 < len(df_raw):
         row2 = df_raw.iloc[header_idx+1].astype(str).replace('nan', '').str.strip().tolist()
         if any('tax' in val.lower() for val in row2):
             df_data = df_raw.iloc[header_idx+2:].reset_index(drop=True)
             new_cols = [c2 if c2 else c1 if c1 else "Unknown" for c1, c2 in zip(row1, row2)]
-            df_data.columns = new_cols
-        else:
-            df_data.columns = row1
-    else:
-        df_data.columns = row1
+            if len(new_cols) == df_data.shape[1]: df_data.columns = new_cols
+        else: 
+            if len(row1) == df_data.shape[1]: df_data.columns = row1
+    else: 
+        if len(row1) == df_data.shape[1]: df_data.columns = row1
 
-    # Rename Columns
+    # 2. Rename & Clean
+    rename_map = {
+        'Invoice number': 'Invoice Number', 'Note number': 'Invoice Number', 'Bill of entry number': 'Invoice Number',
+        'Invoice Value (₹)': 'Invoice Value', 'Taxable Value (₹)': 'Taxable Value',
+        'Integrated Tax (₹)': 'IGST Tax Amount', 'Central Tax (₹)': 'CGST Tax Amount', 'State/UT Tax (₹)': 'SGST Tax Amount',
+        'Cess Amount (₹)': 'Cess Amount', 'Trade/Legal name': 'Vendor Name', 'GSTIN of supplier': 'GSTIN',
+        'Invoice Date': 'Invoice date', 'Place of supply': 'Place Of Supply',
+        'Supply Attract Reverse Charge': 'Reverse Charge', 'Rate (%)': 'Rate'
+    }
     final_cols = []
     for col in df_data.columns:
         mapped = col
-        for k, v in RENAME_MAP.items():
+        for k, v in rename_map.items():
             if k.lower() == str(col).lower().strip(): mapped = v; break
         final_cols.append(mapped)
+    
     df_data.columns = final_cols
+    df_data = df_data.loc[:, ~df_data.columns.duplicated()]
 
-    # Fix Numerics
-    numeric_cols = ['Taxable Value', 'Invoice Value', 'IGST Tax Amount', 'CGST Tax Amount', 'SGST Tax Amount', 'Cess Amount']
+    numeric_cols = ['Taxable Value', 'Invoice Value', 'IGST Tax Amount', 'CGST Tax Amount', 'SGST Tax Amount', 'Cess Amount', 'Rate']
     for col in numeric_cols:
-        if col in df_data.columns: 
-            df_data[col] = pd.to_numeric(df_data[col], errors='coerce').fillna(0)
+        if col in df_data.columns: df_data[col] = pd.to_numeric(df_data[col], errors='coerce').fillna(0)
 
-    # Drop Unwanted
+    # Drop useless columns
     unwanted = ['period', 'filing date', 'applicable %', 'source', 'irn']
     cols_to_drop = [c for c in df_data.columns if any(kw in str(c).lower() for kw in unwanted)]
-    
-    if cols_to_drop: 
-        df_data.drop(columns=cols_to_drop, inplace=True, errors='ignore')
+    if cols_to_drop: df_data.drop(columns=cols_to_drop, inplace=True, errors='ignore')
 
-    # Drop Empty Numeric Columns
-    for col in numeric_cols:
-        if col in df_data.columns and df_data[col].abs().max() == 0: 
-            df_data.drop(columns=[col], inplace=True)
-
-    return df_data.loc[:, ~df_data.columns.duplicated()]
+    df_data = df_data.replace(r'^\s*$', np.nan, regex=True).dropna(axis=1, how='all')
+    return df_data
 
 # ==========================================
-#  ZOHO CLEANER
+#  SECTION 3: ZOHO CLEANING (PRESERVED FROM APP.PY)
 # ==========================================
 
 def clean_zoho_data(file_content):
     xls = pd.ExcelFile(file_content)
-    
+    SHEETS_TO_DELETE = ['imp', 'imp_services', 'nil,exempt,non-gst,composition', 'hsn', 'advance paid', 'advance adjusted', 'docs']
     sheet_map = {}
 
     for sheet_name in xls.sheet_names:
         sheet_lower = sheet_name.lower().strip()
-        
-        if any(x in sheet_lower for x in ZOHO_SHEETS_TO_IGNORE): continue
-        
+        if any(x in sheet_lower for x in SHEETS_TO_DELETE): continue
         try:
-            # Assume header is on Row 2 (index 1)
             df = pd.read_excel(xls, sheet_name=sheet_name, header=1)
-            
             if df.empty: continue
+            df = df.dropna(how='all', axis=0).dropna(how='all', axis=1)
             
-            df = df.dropna(how='all', axis=0) 
-            df = df.dropna(how='all', axis=1) 
-            
-            if df.empty: continue
-
-            # Strict Check: Must have Invoice Number and data
+            # Validation
             if 'Invoice Number' in df.columns:
-                if df['Invoice Number'].dropna().empty:
-                    continue 
-            else:
-                if 'Taxable Value' in df.columns:
-                    if df['Taxable Value'].sum() == 0:
-                        continue
-                else:
-                    continue
-
-            # Cleanup Duplicates
-            df = df.loc[:, ~df.columns.duplicated()]
-
-            # Cut off at last valid invoice
-            if 'Invoice Number' in df.columns:
+                if df['Invoice Number'].dropna().empty: continue
                 last_idx = df['Invoice Number'].last_valid_index()
-                if last_idx is not None:
-                    df = df.iloc[:last_idx + 1]
+                if last_idx is not None: df = df.iloc[:last_idx + 1]
+            elif 'Taxable Value' not in df.columns: continue
+
+            # Standardize Columns for Advanced Engine
+            if 'Taxable Value' in df.columns: df['Taxable Amt.'] = df['Taxable Value']
+            if 'Invoice Date' in df.columns: df['Invoice date'] = df['Invoice Date']
 
             sheet_map[sheet_lower] = {'original_name': sheet_name, 'df': df}
-            
-        except Exception:
-            continue
+        except: continue
 
-    # Remove RCM invoices from B2B if they exist in both
+    # Remove RCM invoices from B2B if present
     if 'b2b' in sheet_map and 'reverse charge' in sheet_map:
         b2b_df = sheet_map['b2b']['df']
         rcm_df = sheet_map['reverse charge']['df']
         if 'Invoice Number' in b2b_df.columns and 'Invoice Number' in rcm_df.columns:
             rcm_invoices = rcm_df['Invoice Number'].unique()
             clean_b2b = b2b_df[~b2b_df['Invoice Number'].isin(rcm_invoices)].copy()
-            if clean_b2b.empty:
-                del sheet_map['b2b']
-            else:
-                sheet_map['b2b']['df'] = clean_b2b
-
+            if clean_b2b.empty: del sheet_map['b2b']
+            else: sheet_map['b2b']['df'] = clean_b2b
     return sheet_map
 
 # ==========================================
-#  RECONCILIATION ENGINE
+#  SECTION 4: ADVANCED RECO ENGINE (MAP BASED)
 # ==========================================
 
-def generate_lookup_maps(dataset):
-    candidates = [] 
-    for key, val in dataset.items():
-        df = val if isinstance(val, pd.DataFrame) else val['df']
+def generate_lookup_map(data_source):
+    """
+    Creates an optimized hash map for O(1) matching speed.
+    """
+    exact_map = {}
+    amount_map = {} 
+    
+    for key, val in data_source.items():
+        if isinstance(val, pd.DataFrame): df = val 
+        else: df = val['df'] 
+        
+        # Support both Taxable Value and Taxable Amt.
         col_inv = 'Invoice Number'
-        col_tax = 'Taxable Value'
-        if col_inv not in df.columns or col_tax not in df.columns: continue
+        col_tax = 'Taxable Value' if 'Taxable Value' in df.columns else 'Taxable Amt.'
 
-        col_gstin = next((c for c in df.columns if 'gstin' in c.lower()), None)
-        col_date = next((c for c in df.columns if 'date' in c.lower() and 'invoice' in c.lower()), None)
-        
-        def find_fin_col(keywords):
-            return next((c for c in df.columns if any(k in c.lower() for k in keywords)), None)
+        if col_inv in df.columns and col_tax in df.columns:
+            for _, row in df.iterrows():
+                inv_raw = str(row[col_inv]).strip()
+                inv_clean = clean_inv_str(inv_raw)
+                
+                try:
+                    raw_tax = float(row[col_tax])
+                    tax_val = raw_tax if pd.notnull(raw_tax) else 0.0
+                except:
+                    tax_val = 0.0
 
-        col_igst = find_fin_col(['igst', 'integrated'])
-        col_cgst = find_fin_col(['cgst', 'central'])
-        col_sgst = find_fin_col(['sgst', 'state', 'ut'])
+                exact_key = str(row[col_inv]).strip().lower()
+                if exact_key not in exact_map: exact_map[exact_key] = tax_val
+                
+                amt_key = f"{tax_val:.2f}"
+                if amt_key not in amount_map: amount_map[amt_key] = []
+                
+                amount_map[amt_key].append({
+                    'clean_inv': inv_clean,
+                    'tax_val': tax_val,
+                    'inv_raw': inv_raw
+                })
 
-        for idx, row in df.iterrows():
-            candidates.append({
-                'id': f"{key}_{idx}",
-                'used': False,
-                'clean_inv': clean_inv_str(str(row[col_inv]).strip()),
-                'raw_inv': str(row[col_inv]).strip(),
-                'tax_val': robust_safe_float(row[col_tax]), 
-                'gstin': clean_gstin(row[col_gstin]) if col_gstin else "",
-                'date': clean_date_robust(row[col_date]) if col_date else None,
-                'igst': robust_safe_float(row[col_igst]) if col_igst else 0.0,
-                'cgst': robust_safe_float(row[col_cgst]) if col_cgst else 0.0,
-                'sgst': robust_safe_float(row[col_sgst]) if col_sgst else 0.0
-            })
-    return candidates
+    return exact_map, amount_map
 
-def reconcile_dataframe(df, candidates, target_col_name, is_portal_sheet, reco_month_dt=None):
-    df[target_col_name] = 0.0
-    df['Difference'] = 0.0
-    df['Remarks'] = ''
-    df['__matched__'] = False 
+def apply_reco_logic(df, lookup_maps, target_col_name, is_portal_sheet, reco_month_dt=None):
+    """
+    The Advanced Logic: Uses fuzzy matching and date checking.
+    """
+    exact_map, amount_map = lookup_maps
     
+    df[target_col_name] = 0.0; df['Difference'] = 0.0; df['Remarks'] = ''
     col_inv = 'Invoice Number'
-    col_tax = 'Taxable Value'
-    col_gstin = next((c for c in df.columns if 'gstin' in c.lower()), None)
-    col_date = next((c for c in df.columns if 'date' in c.lower() and 'invoice' in c.lower()), None)
+    col_tax = 'Taxable Value' if 'Taxable Value' in df.columns else 'Taxable Amt.'
+    col_date = 'Invoice date' 
     
-    def find_col(keywords):
-        return next((c for c in df.columns if any(k in c.lower() for k in keywords)), None)
-    col_igst = find_col(['igst', 'integrated'])
-    col_cgst = find_col(['cgst', 'central'])
-    col_sgst = find_col(['sgst', 'state', 'ut'])
-
     if col_inv not in df.columns: return df
-    if col_date: df[col_date] = df[col_date].apply(clean_date_robust)
 
-    exact_match_index = {}
-    for i, cand in enumerate(candidates):
-        key = (cand['clean_inv'], cand['tax_val'], cand['gstin'])
-        if key not in exact_match_index: exact_match_index[key] = []
-        exact_match_index[key].append(i)
+    if is_portal_sheet and reco_month_dt and col_date in df.columns:
+        df[col_date] = pd.to_datetime(df[col_date], dayfirst=True, errors='coerce')
 
-    def get_row_data(row):
-        return {
-            'inv': clean_inv_str(row.get(col_inv, '')),
-            'tax': robust_safe_float(row.get(col_tax)),
-            'gstin': clean_gstin(row.get(col_gstin)) if col_gstin else "",
-            'date': row.get(col_date) if col_date else None,
-            'igst': robust_safe_float(row.get(col_igst)) if col_igst else 0.0,
-            'cgst': robust_safe_float(row.get(col_cgst)) if col_cgst else 0.0,
-            'sgst': robust_safe_float(row.get(col_sgst)) if col_sgst else 0.0
-        }
-
-    def write_match(idx, r, cand, remark, match_val=None):
-        val = match_val if match_val is not None else cand['tax_val']
+    def row_logic(row):
+        inv_raw = str(row.get(col_inv, '')).strip()
+        inv_clean = clean_inv_str(inv_raw)
+        inv_exact_key = inv_raw.lower()
         
-        # Rate Diff Check
-        final_remark = remark
-        if cand and "Match" in remark and "Rate Diff" not in remark:
-            row_tax = r['igst'] + r['cgst'] + r['sgst']
-            cand_tax = cand['igst'] + cand['cgst'] + cand['sgst']
-            if abs(r['tax'] - val) < 2.0 and abs(row_tax - cand_tax) > 2.0:
-                 final_remark = "Mismatch (Rate Diff)"
+        my_tax = float(row.get(col_tax, 0)) if pd.notnull(row.get(col_tax, 0)) else 0.0
+        
+        remark = ""
+        other_val = 0.0
+        diff = 0.0
+        match_found = False
+        
+        # 1. Exact Match (Fastest)
+        if inv_exact_key in exact_map:
+            other_val = exact_map[inv_exact_key]
+            if abs(my_tax - other_val) < 2:
+                match_found = True
+                remark = "Match"
+            else:
+                 match_found = True 
+                 remark = "Mismatch"
 
-        df.at[idx, target_col_name] = val
-        df.at[idx, 'Difference'] = r['tax'] - val
-        df.at[idx, 'Remarks'] = final_remark
-        df.at[idx, '__matched__'] = True
-        if cand: cand['used'] = True 
-
-    # --- RECONCILIATION PASSES ---
-    for idx, row in df.iterrows():
-        if df.at[idx, '__matched__']: continue
-        r = get_row_data(row)
-        if not r['inv']: continue
-        key = (r['inv'], r['tax'], r['gstin'])
-        if key in exact_match_index:
-            for cand_idx in exact_match_index[key]:
-                cand = candidates[cand_idx]
-                if not cand['used']:
-                    write_match(idx, r, cand, "Match")
-                    break
-    
-    for idx, row in df.iterrows():
-        if df.at[idx, '__matched__']: continue
-        r = get_row_data(row)
-        if not r['inv'] or not r['gstin']: continue
-        potential_group = [c for c in candidates if not c['used'] and c['clean_inv'] == r['inv'] and c['gstin'] == r['gstin']]
-        if len(potential_group) > 1:
-            group_sum = sum(c['tax_val'] for c in potential_group)
-            if abs(r['tax'] - group_sum) <= 2.0:
-                for c in potential_group: c['used'] = True
-                write_match(idx, r, None, "Match(Grouped)", group_sum)
-
-    for idx, row in df.iterrows():
-        if df.at[idx, '__matched__']: continue
-        r = get_row_data(row)
-        if not r['inv']: continue
-        for cand in candidates:
-            if cand['used']: continue
-            if abs(r['tax'] - cand['tax_val']) > 2.0: continue
-            if r['gstin'] and cand['gstin'] and r['gstin'] != cand['gstin']: continue
-            if get_similarity_score(r['inv'], cand['clean_inv']) > 0.85:
-                write_match(idx, r, cand, "Match(Typo)"); break
-    
-    for idx, row in df.iterrows():
-        if df.at[idx, '__matched__']: continue
-        r = get_row_data(row)
-        if not r['inv']: continue
-        for cand in candidates:
-            if cand['used']: continue
-            if abs(r['tax'] - cand['tax_val']) > 2.0: continue
-            if abs(r['igst'] - cand['igst']) > 2.0: continue
-            if r['gstin'] and cand['gstin'] and r['gstin'] != cand['gstin']: continue
-            c_inv, r_inv = cand['clean_inv'], r['inv']
-            if (len(r_inv)>3 and len(c_inv)>3) and ((r_inv in c_inv) or (c_inv in r_inv)):
-                write_match(idx, r, cand, "Match(Fuzzy)"); break
-
-    for strict in [True, False]:
-        remark_lbl = "Match(GSTIN-Strict)" if strict else "Match(GSTIN-Loose)"
-        for idx, row in df.iterrows():
-            if df.at[idx, '__matched__']: continue
-            r = get_row_data(row)
-            if not r['gstin']: continue
-            for cand in candidates:
-                if cand['used'] or cand['gstin'] != r['gstin']: continue
-                if abs(r['tax'] - cand['tax_val']) > 2.0: continue
-                if strict and (abs(r['igst'] - cand['igst']) > 2.0 or abs(r['cgst'] - cand['cgst']) > 2.0): continue
-                write_match(idx, r, cand, remark_lbl); break
-    
-    unmatched_indices = df[~df['__matched__']].index
-    if not unmatched_indices.empty and col_gstin:
-        unmatched_df = df.loc[unmatched_indices].copy()
-        active_gstins = unmatched_df[col_gstin].dropna().apply(clean_gstin).unique()
-        for gstin in active_gstins:
-            if not gstin: continue
-            df_group_indices = unmatched_df[unmatched_df[col_gstin].apply(clean_gstin) == gstin].index
-            my_sum = df.loc[df_group_indices, col_tax].apply(robust_safe_float).sum()
-            cand_group = [c for c in candidates if not c['used'] and c['gstin'] == gstin]
-            cand_sum = sum(c['tax_val'] for c in cand_group)
-            if abs(my_sum - cand_sum) <= 5.0 and my_sum > 0:
-                for idx in df_group_indices:
-                    df.at[idx, target_col_name] = df.at[idx, col_tax]
-                    df.at[idx, 'Difference'] = 0.0
-                    df.at[idx, 'Remarks'] = "Match(Consolidated)"; df.at[idx, '__matched__'] = True
-                for c in cand_group: c['used'] = True
-
-    # Cleanup
-    for idx, row in df.iterrows():
-        if not df.at[idx, '__matched__']:
-            df.at[idx, 'Difference'] = robust_safe_float(row[col_tax])
+        # 2. Fuzzy Match (Amount Based - Intelligent)
+        if not match_found:
+            amt_key = f"{my_tax:.2f}"
+            if amt_key in amount_map:
+                candidates = amount_map[amt_key]
+                for cand in candidates:
+                    cand_clean = cand['clean_inv']
+                    # Fuzzy Logic: Check substrings or typo similarity
+                    if (inv_clean and cand_clean) and ((inv_clean in cand_clean) or (cand_clean in inv_clean)):
+                        other_val = cand['tax_val']
+                        match_found = True
+                        remark = "Match (Fuzzy)"
+                        break 
+        
+        if match_found:
+            diff = my_tax - other_val
+            if abs(diff) > 2: remark = "Mismatch"
+        else:
             remark = "Not in Books" if is_portal_sheet else "Not on Portal"
-            if is_portal_sheet and reco_month_dt and col_date:
-                curr_date = clean_date_robust(row[col_date])
-                if pd.notnull(curr_date) and curr_date < reco_month_dt: remark = "Previous Period Inv"
-            df.at[idx, 'Remarks'] = remark
-    
-    df.drop(columns=['__matched__'], inplace=True, errors='ignore')
-    cess_cols = [c for c in df.columns if 'cess' in c.lower()]
-    for c_col in cess_cols:
-        try:
-            if pd.to_numeric(df[c_col], errors='coerce').fillna(0).sum() == 0: df.drop(columns=[c_col], inplace=True)
-        except: pass
+            diff = my_tax
+
+        # 3. Date Check (For Portal Sheets)
+        if is_portal_sheet and reco_month_dt and pd.notnull(row.get(col_date)):
+            try:
+                inv_dt = row[col_date]
+                if isinstance(inv_dt, str): pass 
+                elif inv_dt < reco_month_dt:
+                    if "Match" in remark: remark += " (Old Inv)" 
+                    else: remark = "Previous Period Inv" 
+            except: pass
+
+        return pd.Series([other_val, diff, remark])
+
+    results = df.apply(row_logic, axis=1)
+    if not results.empty:
+        df[target_col_name] = results[0]
+        df['Difference'] = results[1]
+        df['Remarks'] = results[2]
     return df
 
 # ==========================================
-#  SUMMARIES & DASHBOARDS
+#  SECTION 5: DASHBOARD & SORTING
 # ==========================================
 
 def calculate_smart_offset(liability, credit):
-    """Implements GST Section 49 Payment Rules."""
-    L = liability.copy() 
-    C = credit.copy()
-    
+    """Section 49 Payment Logic"""
+    L = liability.copy(); C = credit.copy()
     paid = {'i_i':0, 'i_c':0, 'i_s':0, 'c_c':0, 'c_i':0, 's_s':0, 's_i':0}
     
-    # 1. IGST Credit Usage
-    use = min(L['i'], C['i'])
-    paid['i_i'] = use; L['i'] -= use; C['i'] -= use
+    # IGST Credit
+    use = min(L['i'], C['i']); paid['i_i'] = use; L['i'] -= use; C['i'] -= use
+    if C['i'] > 0: use = min(L['c'], C['i']); paid['i_c'] = use; L['c'] -= use; C['i'] -= use
+    if C['i'] > 0: use = min(L['s'], C['i']); paid['i_s'] = use; L['s'] -= use; C['i'] -= use
     
-    if C['i'] > 0:
-        use = min(L['c'], C['i']); paid['i_c'] = use; L['c'] -= use; C['i'] -= use
-        
-    if C['i'] > 0:
-        use = min(L['s'], C['i']); paid['i_s'] = use; L['s'] -= use; C['i'] -= use
+    # CGST Credit
+    if L['c'] > 0 and C['c'] > 0: use = min(L['c'], C['c']); paid['c_c'] = use; L['c'] -= use; C['c'] -= use
+    if L['i'] > 0 and C['c'] > 0: use = min(L['i'], C['c']); paid['c_i'] = use; L['i'] -= use; C['c'] -= use
 
-    # 2. CGST Credit Usage
-    if L['c'] > 0 and C['c'] > 0:
-        use = min(L['c'], C['c']); paid['c_c'] = use; L['c'] -= use; C['c'] -= use
-    
-    if L['i'] > 0 and C['c'] > 0:
-        use = min(L['i'], C['c']); paid['c_i'] = use; L['i'] -= use; C['c'] -= use
-
-    # 3. SGST Credit Usage
-    if L['s'] > 0 and C['s'] > 0:
-        use = min(L['s'], C['s']); paid['s_s'] = use; L['s'] -= use; C['s'] -= use
-        
-    if L['i'] > 0 and C['s'] > 0:
-        use = min(L['i'], C['s']); paid['s_i'] = use; L['i'] -= use; C['s'] -= use
-
-    return paid, L, C
+    # SGST Credit
+    if L['s'] > 0 and C['s'] > 0: use = min(L['s'], C['s']); paid['s_s'] = use; L['s'] -= use; C['s'] -= use
+    if L['i'] > 0 and C['s'] > 0: use = min(L['i'], C['s']); paid['s_i'] = use; L['i'] -= use; C['s'] -= use
+    return paid
 
 def generate_master_dashboard(writer, portal_dict, books_dict, manual_inputs):
-    # --- 1. CALCULATE ITC (GSTR-3B TABLE 4) ---
-    sums = {
-        'all_other': {'i':0.0, 'c':0.0, 's':0.0},
-        'rcm_reg': {'i':0.0, 'c':0.0, 's':0.0},
-        'rcm_urd': {'i':0.0, 'c':0.0, 's':0.0}
-    }
+    """Preserved from App.py for Input Tax Credit Summary"""
+    sums = {'all_other': {'i':0,'c':0,'s':0}, 'rcm_reg': {'i':0,'c':0,'s':0}, 'rcm_urd': {'i':0,'c':0,'s':0}}
     
     def get_t(row, df):
         def f(k): return next((c for c in df.columns if any(x in c.lower() for x in k)), None)
         ci, cc, cs = f(['igst']), f(['cgst']), f(['sgst'])
         return robust_safe_float(row.get(ci)), robust_safe_float(row.get(cc)), robust_safe_float(row.get(cs))
 
-    # Portal Loop
     for name, df in portal_dict.items():
         col_rcm = next((c for c in df.columns if 'reverse' in c.lower()), None)
         is_cn = 'cdnr' in name.lower() or 'credit' in name.lower()
@@ -544,254 +371,91 @@ def generate_master_dashboard(writer, portal_dict, books_dict, manual_inputs):
             else:
                 sums['all_other']['i'] += i*mult; sums['all_other']['c'] += c*mult; sums['all_other']['s'] += s*mult
 
-    # Books Loop
-    for name, data in books_dict.items():
-        if any(x in name.lower() for x in ['b2bur', 'unregistered', 'urd']):
-            df = data['df']
-            mult = -1 if 'credit' in name.lower() else 1
-            for _, r in df.iterrows():
-                i, c, s = get_t(r, df)
-                sums['rcm_urd']['i'] += i*mult; sums['rcm_urd']['c'] += c*mult; sums['rcm_urd']['s'] += s*mult
-
-    # RCM & Net ITC
-    tot_rcm = {k: sums['rcm_reg'][k] + sums['rcm_urd'][k] for k in ['i','c','s']}
+    tot_rcm = {k: sums['rcm_reg'][k] for k in ['i','c','s']} 
     net_itc = {k: tot_rcm[k] + sums['all_other'][k] for k in ['i','c','s']}
 
-    # --- 2. CALCULATE PAYMENT (SMART OFFSET) ---
+    # Offset Logic
     sales = manual_inputs.get('sales', {'igst':0, 'cgst':0, 'sgst':0})
     op = manual_inputs.get('opening', {'igst':0, 'cgst':0, 'sgst':0})
     
     L_fwd = {'i': sales['igst'], 'c': sales['cgst'], 's': sales['sgst']}
-    C_avail = {
-        'i': op['igst'] + net_itc['i'],
-        'c': op['cgst'] + net_itc['c'],
-        's': op['sgst'] + net_itc['s']
-    }
+    C_avail = {'i': op['igst'] + net_itc['i'], 'c': op['cgst'] + net_itc['c'], 's': op['sgst'] + net_itc['s']}
     
-    # Run Algorithm
-    paid, cash_fwd, bal_credit = calculate_smart_offset(L_fwd, C_avail)
-    
-    # --- 3. BUILD VISUAL DATA ---
+    paid = calculate_smart_offset(L_fwd, C_avail)
+
     data = []
-    def r(desc, sub, i, c, s): return [desc, sub, i, c, s, i+c+s]
-
-    data.append(["OUTPUT TAX LIABILITY (SALES)", "", "", "", "", ""])
-    data.append(r("1. Output Liability", "Sales", sales['igst'], sales['cgst'], sales['sgst']))
-    data.append(r("2. RCM Liability", "Cash Only", tot_rcm['i'], tot_rcm['c'], tot_rcm['s']))
-    data.append(r("3. Total Liability", "1 + 2", 0,0,0)) 
+    def r(d, s, i, c, sg): data.append([d, s, i, c, sg, i+c+sg])
+    r("OUTPUT LIABILITY", "", 0, 0, 0)
+    r("1. Sales", "", sales['igst'], sales['cgst'], sales['sgst'])
+    r("OFFSET SUMMARY", "", 0, 0, 0)
+    r("Paid by IGST", "", paid['i_i'], paid['i_c'], paid['i_s'])
     
-    data.append(["", "", "", "", "", ""]) 
-
-    data.append(["ITC SUMMARY (GSTR-3B TABLE 4)", "", "", "", "", ""])
-    data.append(r("(A) ITC Available", "Total", "", "", "")) 
-    data.append(r("   (3) Inward RCM", "Reg+URD", tot_rcm['i'], tot_rcm['c'], tot_rcm['s']))
-    data.append(r("   (5) All Other ITC", "B2B-CDNR", sums['all_other']['i'], sums['all_other']['c'], sums['all_other']['s']))
-    data.append(r("(B) ITC Reversed", "Ineligible", 0, 0, 0))
-    data.append(r("(C) Net ITC Available", "A - B", 0,0,0)) 
-
-    data.append(["", "", "", "", "", ""]) 
-
-    data.append(["TOTAL AVAILABLE CREDIT", "", "", "", "", ""])
-    data.append(r("4. Opening Balance", "Ledger", op['igst'], op['cgst'], op['sgst']))
-    data.append(r("5. Current Month ITC", "From (C)", 0,0,0)) 
-    data.append(r("6. Total Credit Available", "4 + 5", 0,0,0)) 
-
-    data.append(["", "", "", "", "", ""]) 
-
-    data.append(["OFFSET SUMMARY (SECTION 49)", "", "", "", "", ""])
-    data.append(r("Paid by IGST", "-> I, C, S", paid['i_i'], paid['i_c'], paid['i_s']))
-    data.append(r("Paid by CGST", "-> C, I", paid['c_i'], paid['c_c'], 0))
-    data.append(r("Paid by SGST", "-> S, I", paid['s_i'], 0, paid['s_s']))
-
-    data.append(["", "", "", "", "", ""]) 
-
-    data.append(["FINAL CHALLAN CALCULATION", "", "", "", "", ""])
-    data.append(r("NET PAYABLE IN CASH", "Liab - Offset", 0,0,0)) 
-    data.append(r("BALANCE CREDIT C/F", "Cred - Offset", 0,0,0)) 
-
     df = pd.DataFrame(data, columns=["Particulars", "Details", "IGST", "CGST", "SGST", "Total"])
-    sheet_name = "Master Dashboard"
-    df.to_excel(writer, sheet_name=sheet_name, index=False)
-    
-    # Formatting & Formulas
-    wb = writer.book; ws = writer.sheets[sheet_name]
-    s_sub = wb.add_format({'bold':True, 'bg_color':'#DCDCDC', 'border':1})
-    s_num = wb.add_format({'num_format':'#,##0.00', 'border':1})
-    s_red = wb.add_format({'bold':True, 'bg_color':'#FFC7CE', 'font_color':'#9C0006', 'num_format':'#,##0.00', 'border':1})
-    s_green = wb.add_format({'bold':True, 'bg_color':'#C6EFCE', 'font_color':'#006100', 'num_format':'#,##0.00', 'border':1})
-    s_blue = wb.add_format({'bg_color':'#E6E6FA', 'num_format':'#,##0.00', 'border':1}) 
-    s_bold_num = wb.add_format({'bold':True, 'num_format':'#,##0.00', 'top':1})
-    s_sales = wb.add_format({'bold':True, 'bg_color':'#FFCC99', 'border':1})
-    s_purch = wb.add_format({'bold':True, 'bg_color':'#CCECFF', 'border':1})
-    s_cred = wb.add_format({'bold':True, 'bg_color':'#E6E6FA', 'border':1})
-    s_final = wb.add_format({'bold':True, 'bg_color':'#006400', 'font_color':'white', 'border':1})
-
-    ws.set_column(0, 0, 45); ws.set_column(1, 1, 20); ws.set_column(2, 5, 18)
-    for c, val in enumerate(df.columns): ws.write(0, c, val, s_sub)
-
-    for r_idx, row in enumerate(data):
-        xl_r = r_idx + 1 
-        desc = str(row[0])
-        if not desc: continue
-        
-        if "OUTPUT TAX" in desc: ws.merge_range(xl_r, 0, xl_r, 5, desc, s_sales); continue
-        if "ITC SUMMARY" in desc: ws.merge_range(xl_r, 0, xl_r, 5, desc, s_purch); continue
-        if "TOTAL AVAILABLE" in desc: ws.merge_range(xl_r, 0, xl_r, 5, desc, s_cred); continue
-        if "OFFSET" in desc: ws.merge_range(xl_r, 0, xl_r, 5, desc, s_sub); continue
-        if "FINAL CHALLAN" in desc: ws.merge_range(xl_r, 0, xl_r, 5, desc, s_final); continue
-
-        for col_idx in [2, 3, 4]: 
-            if "Total Liability" in desc:
-                r_1 = xl_rowcol_to_cell(r_idx - 2 + 1, col_idx); r_2 = xl_rowcol_to_cell(r_idx - 1 + 1, col_idx)
-                ws.write_formula(xl_r, col_idx, f"={r_1}+{r_2}", s_bold_num); continue
-            if "Net ITC" in desc:
-                r_a3 = xl_rowcol_to_cell(xl_r - 3, col_idx); r_a5 = xl_rowcol_to_cell(xl_r - 2, col_idx); r_b = xl_rowcol_to_cell(xl_r - 1, col_idx)
-                ws.write_formula(xl_r, col_idx, f"={r_a3}+{r_a5}-{r_b}", s_bold_num); continue
-            if "Current Month ITC" in desc:
-                target = xl_rowcol_to_cell(11 + 1, col_idx) 
-                ws.write_formula(xl_r, col_idx, f"={target}", s_num); continue
-            if "Total Credit" in desc:
-                r_op = xl_rowcol_to_cell(xl_r - 2, col_idx); r_cur = xl_rowcol_to_cell(xl_r - 1, col_idx)
-                ws.write_formula(xl_r, col_idx, f"={r_op}+{r_cur}", s_bold_num); continue
-            if "NET PAYABLE" in desc:
-                r_liab = xl_rowcol_to_cell(3 + 1, col_idx); r_off_start = xl_rowcol_to_cell(19 + 1, col_idx); r_off_end = xl_rowcol_to_cell(21 + 1, col_idx)
-                ws.write_formula(xl_r, col_idx, f"=MAX(0, {r_liab}-SUM({r_off_start}:{r_off_end}))", s_red); continue
-            if "BALANCE CREDIT" in desc:
-                r_cred = xl_rowcol_to_cell(16 + 1, col_idx); r_off_start = xl_rowcol_to_cell(19 + 1, col_idx); r_off_end = xl_rowcol_to_cell(21 + 1, col_idx)
-                ws.write_formula(xl_r, col_idx, f"=MAX(0, {r_cred}-SUM({r_off_start}:{r_off_end}))", s_green); continue
-            ws.write(xl_r, col_idx, row[col_idx], s_blue if "Paid by" in desc else s_num)
-
-        cell_i = xl_rowcol_to_cell(xl_r, 2); cell_s = xl_rowcol_to_cell(xl_r, 4)
-        style_tot = s_red if "NET PAYABLE" in desc else (s_green if "BALANCE" in desc else s_bold_num)
-        ws.write_formula(xl_r, 5, f"=SUM({cell_i}:{cell_s})", style_tot)
-        ws.write(xl_r, 0, row[0], s_num); ws.write(xl_r, 1, row[1], s_num)
-
-def generate_vendor_summary(writer, portal_dict, books_dict):
-    stats = {}
-    def find_cols_robust(df):
-        gstin = next((c for c in df.columns if 'gstin' in c.lower()), None)
-        name = next((c for c in df.columns if any(k in c.lower() for k in ['vendor', 'trade', 'party', 'name'])), None)
-        tax = next((c for c in df.columns if 'taxable' in c.lower()), None)
-        igst = next((c for c in df.columns if any(k in c.lower() for k in ['igst', 'integrated'])), None)
-        cgst = next((c for c in df.columns if any(k in c.lower() for k in ['cgst', 'central'])), None)
-        sgst = next((c for c in df.columns if any(k in c.lower() for k in ['sgst', 'state'])), None)
-        return gstin, name, tax, igst, cgst, sgst
-
-    def process(d_dict, source):
-        for name, data in d_dict.items():
-            df = data if isinstance(data, pd.DataFrame) else data['df']
-            g, n, t, i, c, s = find_cols_robust(df)
-            if not g or not t: continue
-            mult = -1 if ('cdnr' in name.lower() or 'credit' in name.lower()) else 1
-            for _, r in df.iterrows():
-                gst = clean_gstin(r[g])
-                if not gst: continue
-                if gst not in stats:
-                    stats[gst] = {k:0.0 for k in ['p_tax','p_i','p_c','p_s','b_tax','b_i','b_c','b_s']}
-                    stats[gst]['name'] = str(r.get(n, 'Unknown')).strip()
-                if stats[gst]['name'] in ['Unknown', 'nan', ''] and n:
-                    stats[gst]['name'] = str(r.get(n, '')).strip()
-                pre = 'p_' if source == 'portal' else 'b_'
-                stats[gst][pre+'tax'] += robust_safe_float(r.get(t,0))*mult
-                stats[gst][pre+'i'] += robust_safe_float(r.get(i,0))*mult
-                stats[gst][pre+'c'] += robust_safe_float(r.get(c,0))*mult
-                stats[gst][pre+'s'] += robust_safe_float(r.get(s,0))*mult
-
-    process(portal_dict, 'portal')
-    process(books_dict, 'books')
-
-    summ = []
-    for g, d in stats.items():
-        diff = d['b_tax'] - d['p_tax']
-        status = "Matched"
-        if abs(diff) < 2: status = "✅ Fully Matched"
-        elif d['p_tax'] == 0: status = "❓ Not in Portal"
-        elif d['b_tax'] == 0: status = "❌ Not in Books"
-        elif diff > 0: status = "⚠️ Excess in Books"
-        else: status = "💰 Unclaimed in Portal"
-        summ.append([g, d['name'], d['p_tax'], d['p_i'], d['p_c'], d['p_s'], d['b_tax'], d['b_i'], d['b_c'], d['b_s'], diff, status])
-    
-    cols = ['GSTIN', 'Name', 'Portal Taxable', 'P-IGST', 'P-CGST', 'P-SGST', 'Books Taxable', 'B-IGST', 'B-CGST', 'B-SGST', 'Diff', 'Status']
-    df_s = pd.DataFrame(summ, columns=cols)
-    add_formatting(writer, df_s, "Vendor Summary")
-
-def generate_discrepancy_sheets(writer, portal_dict, books_dict):
-    """Creates dynamic sheets for discrepancies."""
-    not_in_books = []
-    prev_period = []
-    
-    for sheet_name, df in portal_dict.items():
-        if 'Remarks' not in df.columns: continue
-        
-        nib_df = df[df['Remarks'].str.contains("Not in Books", case=False, na=False)].copy()
-        if not nib_df.empty:
-            nib_df.insert(0, 'Source Sheet', sheet_name)
-            not_in_books.append(nib_df)
-            
-        prev_df = df[df['Remarks'].str.contains("Previous", case=False, na=False)].copy()
-        if not prev_df.empty:
-            prev_df.insert(0, 'Source Sheet', sheet_name)
-            prev_period.append(prev_df)
-
-    not_on_portal = []
-    for sheet_name, data in books_dict.items():
-        df = data['df']
-        if 'Remarks' not in df.columns: continue
-        
-        nop_df = df[df['Remarks'].str.contains("Not on Portal", case=False, na=False)].copy()
-        if not nop_df.empty:
-            nop_df.insert(0, 'Source Sheet', sheet_name)
-            not_on_portal.append(nop_df)
-
-    if not_in_books:
-        final_nib = pd.concat(not_in_books, ignore_index=True)
-        add_formatting(writer, final_nib, "Not in Books")
-        
-    if not_on_portal:
-        final_nop = pd.concat(not_on_portal, ignore_index=True)
-        add_formatting(writer, final_nop, "Not on Portal")
-        
-    if prev_period:
-        final_prev = pd.concat(prev_period, ignore_index=True)
-        add_formatting(writer, final_prev, "Previous Period Input")
+    # Use advanced formatting here too
+    add_formatting_and_subtotals(writer, df, "Master Dashboard")
 
 def get_smart_sorted_order(portal_dict, books_dict):
-    final = []; used = set()
-    bk = list(books_dict.keys())
-    def clean(n): return n.lower().replace(" ", "").replace("-", "").replace("_", "").replace("(portal)", "").replace("(books)", "")
+    """
+    Matches Portal sheets to Books sheets side-by-side.
+    """
+    portal_invs = {}
+    for k, df in portal_dict.items():
+        if 'Invoice Number' in df.columns:
+            unique_invs = set(df['Invoice Number'].astype(str).str.lower().str.strip())
+            portal_invs[k] = unique_invs
+            
+    books_invs = {}
+    for k, val in books_dict.items():
+        df = val['df']
+        if 'Invoice Number' in df.columns:
+            unique_invs = set(df['Invoice Number'].astype(str).str.lower().str.strip())
+            books_invs[k] = unique_invs
     
+    final_order = []
+    used_books = set()
+
     for p_name, p_df in portal_dict.items():
-        best = None; p_cl = clean(p_name)
-        for b in bk:
-            if b in used: continue
-            b_cl = clean(b)
-            if p_cl == b_cl or (p_cl=='b2b' and b_cl=='b2b') or (p_cl in b_cl) or (b_cl in p_cl):
-                best = b; break
-        final.append((f"{p_name[:20]} (Portal)", p_df))
-        if best:
-            final.append((f"{best[:20]} (Books)", books_dict[best]['df'])); used.add(best)
-    
-    for b, data in books_dict.items():
-        if b not in used: final.append((f"{b[:20]} (Books)", data['df']))
-    return final
+        best_match_name = None
+        highest_intersect = 0
+        p_set = portal_invs.get(p_name, set())
+
+        if p_set:
+            for b_name, b_set in books_invs.items():
+                if b_name in used_books: continue
+                common_count = len(p_set.intersection(b_set))
+                if common_count > highest_intersect:
+                    highest_intersect = common_count
+                    best_match_name = b_name
+
+        base_name = p_name[:20].strip() 
+        p_sheet_title = f"{base_name} (Portal)"
+        final_order.append((p_sheet_title, p_df))
+
+        if best_match_name and highest_intersect > 0:
+            b_df = books_dict[best_match_name]['df']
+            b_sheet_title = f"{base_name} (Books)"
+            final_order.append((b_sheet_title, b_df))
+            used_books.add(best_match_name)
+
+    for b_name, val in books_dict.items():
+        if b_name not in used_books:
+            title = f"{b_name} (Books)"[:31]
+            final_order.append((title, val['df']))
+            
+    return final_order
 
 # ==========================================
-#  MAIN ENTRY POINT (MODULE)
+#  SECTION 6: MAIN ENTRY POINT
 # ==========================================
 
 def generate_reco_report_zoho(file_portal, file_zoho, month_str=None, manual_inputs=None):
     """
-    Main entry point for integration.
-    Args:
-        file_portal: File object or path for Portal Excel
-        file_zoho: File object or path for Zoho Excel
-        month_str: String 'YYYY-MM'
-        manual_inputs: Dictionary (Optional) with 'sales' and 'opening' keys
+    API Entry Point. 
+    Combines 'Advanced Engine' logic with 'Zoho' context inputs.
     """
     output = BytesIO()
     reco_dt = pd.to_datetime(month_str + "-01") if month_str else None
     
-    # Default inputs if not provided (Handling Legacy Calls)
     if manual_inputs is None:
         manual_inputs = {
             'sales': {'taxable':0, 'igst':0, 'cgst':0, 'sgst':0},
@@ -800,31 +464,53 @@ def generate_reco_report_zoho(file_portal, file_zoho, month_str=None, manual_inp
 
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
         try:
-            # 1. Clean Data
-            portal_data = clean_portal_data(file_portal)
-            zoho_data = clean_zoho_data(file_zoho)
+            # 1. Cleaning Phase
+            # Use Advanced Cleaning for Portal
+            xls_p = pd.ExcelFile(file_portal)
+            raw_portal = filter_portal_sheets(xls_p)
+            clean_portal_dict = {} 
+            rcm_frames = []
+            
+            for sheet, df_raw in raw_portal.items():
+                df = clean_portal_df(df_raw, sheet)
+                if df.empty: continue
+                if 'Reverse Charge' in df.columns:
+                    is_rcm = df['Reverse Charge'].astype(str).str.strip().str.lower().isin(['yes', 'y'])
+                    if is_rcm.any():
+                        rcm_data = df[is_rcm].copy(); rcm_data['Source'] = sheet
+                        rcm_frames.append(rcm_data); df = df[~is_rcm]
+                clean_portal_dict[sheet] = df
+            if rcm_frames: clean_portal_dict['RCM Combined'] = pd.concat(rcm_frames, ignore_index=True)
 
-            # 2. Generate Maps
-            books_maps = generate_lookup_maps(zoho_data)
-            portal_maps = generate_lookup_maps(portal_data)
+            # Use Zoho Cleaning for Books (Context Preserved)
+            clean_zoho_dict = clean_zoho_data(file_zoho)
 
-            # 3. Process
-            processed_portal = {s: reconcile_dataframe(df, books_maps, 'As per Books', True, reco_dt) for s, df in portal_data.items()}
-            for key, data in zoho_data.items():
-                data['df'] = reconcile_dataframe(data['df'], portal_maps, 'As per Portal', False, None)
+            # 2. Engine Phase (Advanced Map-Based Logic)
+            books_maps_tuple = generate_lookup_map(clean_zoho_dict) 
+            portal_maps_tuple = generate_lookup_map(clean_portal_dict)
 
-            # 4. Generate Summaries
-            generate_master_dashboard(writer, processed_portal, zoho_data, manual_inputs)
-            generate_vendor_summary(writer, processed_portal, zoho_data)
-            generate_discrepancy_sheets(writer, processed_portal, zoho_data)
+            # 3. Processing Phase
+            processed_portal = {}
+            for sheet_name, df in clean_portal_dict.items():
+                df_final = apply_reco_logic(df, books_maps_tuple, 'As per Books', True, reco_dt)
+                processed_portal[sheet_name] = df_final
 
-            # 5. Write Details
-            sorted_sheets = get_smart_sorted_order(processed_portal, zoho_data)
-            for sheet_name, df in sorted_sheets:
-                add_formatting(writer, df, sheet_name)
+            # Process Books (Zoho)
+            for sheet_name, data in clean_zoho_dict.items():
+                df_final = apply_reco_logic(data['df'], portal_maps_tuple, 'As per Portal', False, None)
+                # Update the df inside the dictionary
+                clean_zoho_dict[sheet_name]['df'] = df_final
+
+            # 4. Reporting Phase
+            generate_master_dashboard(writer, processed_portal, clean_zoho_dict, manual_inputs)
+            
+            sorted_sheets = get_smart_sorted_order(processed_portal, clean_zoho_dict)
+            
+            for sheet_title, df_final in sorted_sheets:
+                add_formatting_and_subtotals(writer, df_final, sheet_title)
                 
         except Exception as e:
-            logging.error(f"Error in Max Reco Module: {e}")
+            logging.error(f"Error in Advanced Zoho Reco Engine: {e}")
             raise e
 
     output.seek(0)
