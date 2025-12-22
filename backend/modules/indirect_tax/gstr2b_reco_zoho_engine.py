@@ -14,6 +14,10 @@ PORTAL_SHEETS_TO_IGNORE = [
     "Read me", "ITC Available", "ITC not available", "ITC Reversal", "ITC Rejected"
 ]
 
+ZOHO_SHEETS_TO_IGNORE = [
+    'imp', 'imp_services', 'nil,exempt,non-gst,composition', 'hsn', 'advance paid', 'advance adjusted', 'docs'
+]
+
 RENAME_MAP = {
     'Invoice number': 'Invoice Number', 'Note number': 'Invoice Number', 'Bill of entry number': 'Invoice Number',
     'Invoice Value (₹)': 'Invoice Value', 'Taxable Value (₹)': 'Taxable Value',
@@ -31,6 +35,12 @@ def clean_inv_str(s):
     """Standardizes invoice numbers: lowercase, removes special chars."""
     if pd.isna(s): return ""
     return re.sub(r'[^a-zA-Z0-9]', '', str(s).lower())
+
+def safe_float(val):
+    try:
+        return float(val) if pd.notnull(val) else 0.0
+    except:
+        return 0.0
 
 def robust_safe_float(val):
     if pd.isna(val) or val == '': return 0.0
@@ -97,8 +107,12 @@ def add_formatting(writer, df, sheet_name):
     
     for col_idx, col_name in enumerate(df.columns):
         c_name = str(col_name).lower()
+        
+        # 1. Must contain a financial keyword
+        # 2. Must NOT be an ID, Date, or Number (like Invoice Number)
         if any(k in c_name for k in keywords_to_sum) and 'number' not in c_name and 'date' not in c_name and 'id' not in c_name:
              col_letter = xl_col_to_name(col_idx)
+             # Formula: =SUBTOTAL(9, C2:C100)
              worksheet.write_formula(total_row, col_idx, f'=SUBTOTAL(9,{col_letter}2:{col_letter}{total_row})', fmt_num)
 
     # Apply Conditional Formatting (Red/Green)
@@ -140,59 +154,8 @@ def clean_portal_data(file_content):
                 target_idx = conditional_delete[sheet_clean] - 1
                 if len(df_raw) <= target_idx or df_raw.iloc[target_idx].isna().all(): continue
 
-            # Dynamic Header Extraction
-            header_idx = -1
-            search_terms = ['gstin of supplier', 'invoice number', 'note number', 'bill of entry number']
-            
-            for i in range(min(10, len(df_raw))):
-                row_str = " ".join(df_raw.iloc[i].astype(str).fillna('').values).lower()
-                if any(term in row_str for term in search_terms):
-                    header_idx = i; break
-            
-            if header_idx == -1: continue
-
-            df = df_raw.iloc[header_idx+1:].reset_index(drop=True)
-            row1 = df_raw.iloc[header_idx].astype(str).replace('nan', '').str.strip().tolist()
-            
-            # Handle Double Header Rows (common in GSTR)
-            if header_idx + 1 < len(df_raw):
-                row2 = df_raw.iloc[header_idx+1].astype(str).replace('nan', '').str.strip().tolist()
-                if any('tax' in val.lower() for val in row2):
-                    df = df_raw.iloc[header_idx+2:].reset_index(drop=True)
-                    new_cols = [c2 if c2 else c1 if c1 else "Unknown" for c1, c2 in zip(row1, row2)]
-                    df.columns = new_cols
-                else:
-                    df.columns = row1
-            else:
-                df.columns = row1
-
-            # Rename Columns
-            final_cols = []
-            for col in df.columns:
-                mapped = col
-                for k, v in RENAME_MAP.items():
-                    if k.lower() == str(col).lower().strip(): mapped = v; break
-                final_cols.append(mapped)
-            df.columns = final_cols
-
-            # Fix Numerics
-            numeric_cols = ['Taxable Value', 'Invoice Value', 'IGST Tax Amount', 'CGST Tax Amount', 'SGST Tax Amount', 'Cess Amount']
-            for col in numeric_cols:
-                if col in df.columns: 
-                    df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
-
-            # Drop Unwanted
-            unwanted = ['period', 'filing date', 'applicable %', 'source', 'irn']
-            cols_to_drop = [c for c in df.columns if any(kw in str(c).lower() for kw in unwanted)]
-            if cols_to_drop: 
-                df.drop(columns=cols_to_drop, inplace=True, errors='ignore')
-
-            # Drop Empty Numeric Columns
-            for col in numeric_cols:
-                if col in df.columns and df[col].abs().max() == 0: 
-                    df.drop(columns=[col], inplace=True)
-            
-            df = df.loc[:, ~df.columns.duplicated()]
+            df = _extract_header_dynamically(df_raw)
+            if df.empty: continue
 
             # Separate RCM
             if 'Reverse Charge' in df.columns:
@@ -214,25 +177,76 @@ def clean_portal_data(file_content):
 
     return cleaned_sheets
 
+def _extract_header_dynamically(df_raw):
+    header_idx = -1
+    search_terms = ['gstin of supplier', 'invoice number', 'note number', 'bill of entry number']
+    
+    for i in range(min(10, len(df_raw))):
+        row_str = " ".join(df_raw.iloc[i].astype(str).fillna('').values).lower()
+        if any(term in row_str for term in search_terms):
+            header_idx = i; break
+    
+    if header_idx == -1: return pd.DataFrame()
+
+    df_data = df_raw.iloc[header_idx+1:].reset_index(drop=True)
+    row1 = df_raw.iloc[header_idx].astype(str).replace('nan', '').str.strip().tolist()
+    
+    if header_idx + 1 < len(df_raw):
+        row2 = df_raw.iloc[header_idx+1].astype(str).replace('nan', '').str.strip().tolist()
+        if any('tax' in val.lower() for val in row2):
+            df_data = df_raw.iloc[header_idx+2:].reset_index(drop=True)
+            new_cols = [c2 if c2 else c1 if c1 else "Unknown" for c1, c2 in zip(row1, row2)]
+            df_data.columns = new_cols
+        else:
+            df_data.columns = row1
+    else:
+        df_data.columns = row1
+
+    # Rename Columns
+    final_cols = []
+    for col in df_data.columns:
+        mapped = col
+        for k, v in RENAME_MAP.items():
+            if k.lower() == str(col).lower().strip(): mapped = v; break
+        final_cols.append(mapped)
+    df_data.columns = final_cols
+
+    # Fix Numerics
+    numeric_cols = ['Taxable Value', 'Invoice Value', 'IGST Tax Amount', 'CGST Tax Amount', 'SGST Tax Amount', 'Cess Amount']
+    for col in numeric_cols:
+        if col in df_data.columns: 
+            df_data[col] = pd.to_numeric(df_data[col], errors='coerce').fillna(0)
+
+    # Drop Unwanted
+    unwanted = ['period', 'filing date', 'applicable %', 'source', 'irn']
+    cols_to_drop = [c for c in df_data.columns if any(kw in str(c).lower() for kw in unwanted)]
+    
+    if cols_to_drop: 
+        df_data.drop(columns=cols_to_drop, inplace=True, errors='ignore')
+
+    # Drop Empty Numeric Columns
+    for col in numeric_cols:
+        if col in df_data.columns and df_data[col].abs().max() == 0: 
+            df_data.drop(columns=[col], inplace=True)
+
+    return df_data.loc[:, ~df_data.columns.duplicated()]
+
 # ==========================================
-#  ZOHO CLEANER (EXACT LOGIC FROM STANDALONE)
+#  ZOHO CLEANER
 # ==========================================
 
 def clean_zoho_data(file_content):
     xls = pd.ExcelFile(file_content)
-    
-    SHEETS_TO_DELETE = ['imp', 'imp_services', 'nil,exempt,non-gst,composition', 
-                        'hsn', 'advance paid', 'advance adjusted', 'docs']
     
     sheet_map = {}
 
     for sheet_name in xls.sheet_names:
         sheet_lower = sheet_name.lower().strip()
         
-        if any(x in sheet_lower for x in SHEETS_TO_DELETE): continue
+        if any(x in sheet_lower for x in ZOHO_SHEETS_TO_IGNORE): continue
         
         try:
-            # Assume header is on Row 2 (index 1) - Zoho Standard
+            # Assume header is on Row 2 (index 1)
             df = pd.read_excel(xls, sheet_name=sheet_name, header=1)
             
             if df.empty: continue
@@ -247,7 +261,6 @@ def clean_zoho_data(file_content):
                 if df['Invoice Number'].dropna().empty:
                     continue 
             else:
-                # If no Invoice Number, check if it's a valid data sheet via Taxable Value
                 if 'Taxable Value' in df.columns:
                     if df['Taxable Value'].sum() == 0:
                         continue
@@ -257,7 +270,7 @@ def clean_zoho_data(file_content):
             # Cleanup Duplicates
             df = df.loc[:, ~df.columns.duplicated()]
 
-            # Cut off at last valid invoice (removes Totals at bottom)
+            # Cut off at last valid invoice
             if 'Invoice Number' in df.columns:
                 last_idx = df['Invoice Number'].last_valid_index()
                 if last_idx is not None:
@@ -374,8 +387,6 @@ def reconcile_dataframe(df, candidates, target_col_name, is_portal_sheet, reco_m
         if cand: cand['used'] = True 
 
     # --- RECONCILIATION PASSES ---
-    
-    # 1. Exact Matches
     for idx, row in df.iterrows():
         if df.at[idx, '__matched__']: continue
         r = get_row_data(row)
@@ -388,7 +399,6 @@ def reconcile_dataframe(df, candidates, target_col_name, is_portal_sheet, reco_m
                     write_match(idx, r, cand, "Match")
                     break
     
-    # 2. Consolidated/Grouped Matches
     for idx, row in df.iterrows():
         if df.at[idx, '__matched__']: continue
         r = get_row_data(row)
@@ -400,7 +410,6 @@ def reconcile_dataframe(df, candidates, target_col_name, is_portal_sheet, reco_m
                 for c in potential_group: c['used'] = True
                 write_match(idx, r, None, "Match(Grouped)", group_sum)
 
-    # 3. Typo Matches
     for idx, row in df.iterrows():
         if df.at[idx, '__matched__']: continue
         r = get_row_data(row)
@@ -412,7 +421,6 @@ def reconcile_dataframe(df, candidates, target_col_name, is_portal_sheet, reco_m
             if get_similarity_score(r['inv'], cand['clean_inv']) > 0.85:
                 write_match(idx, r, cand, "Match(Typo)"); break
     
-    # 4. Fuzzy Matches
     for idx, row in df.iterrows():
         if df.at[idx, '__matched__']: continue
         r = get_row_data(row)
@@ -426,7 +434,6 @@ def reconcile_dataframe(df, candidates, target_col_name, is_portal_sheet, reco_m
             if (len(r_inv)>3 and len(c_inv)>3) and ((r_inv in c_inv) or (c_inv in r_inv)):
                 write_match(idx, r, cand, "Match(Fuzzy)"); break
 
-    # 5. GSTIN Only Matches (Strict & Loose)
     for strict in [True, False]:
         remark_lbl = "Match(GSTIN-Strict)" if strict else "Match(GSTIN-Loose)"
         for idx, row in df.iterrows():
@@ -439,7 +446,6 @@ def reconcile_dataframe(df, candidates, target_col_name, is_portal_sheet, reco_m
                 if strict and (abs(r['igst'] - cand['igst']) > 2.0 or abs(r['cgst'] - cand['cgst']) > 2.0): continue
                 write_match(idx, r, cand, remark_lbl); break
     
-    # 6. Consolidated GSTIN Matches (Many-to-One by Tax Value)
     unmatched_indices = df[~df['__matched__']].index
     if not unmatched_indices.empty and col_gstin:
         unmatched_df = df.loc[unmatched_indices].copy()
@@ -457,7 +463,7 @@ def reconcile_dataframe(df, candidates, target_col_name, is_portal_sheet, reco_m
                     df.at[idx, 'Remarks'] = "Match(Consolidated)"; df.at[idx, '__matched__'] = True
                 for c in cand_group: c['used'] = True
 
-    # Cleanup & Status Assignment
+    # Cleanup
     for idx, row in df.iterrows():
         if not df.at[idx, '__matched__']:
             df.at[idx, 'Difference'] = robust_safe_float(row[col_tax])
@@ -522,7 +528,7 @@ def generate_master_dashboard(writer, portal_dict, books_dict, manual_inputs):
     
     def get_t(row, df):
         def f(k): return next((c for c in df.columns if any(x in c.lower() for x in k)), None)
-        ci, cc, cs = f(['igst', 'integrated']), f(['cgst', 'central']), f(['sgst', 'state', 'ut'])
+        ci, cc, cs = f(['igst']), f(['cgst']), f(['sgst'])
         return robust_safe_float(row.get(ci)), robust_safe_float(row.get(cc)), robust_safe_float(row.get(cs))
 
     # Portal Loop
@@ -562,6 +568,7 @@ def generate_master_dashboard(writer, portal_dict, books_dict, manual_inputs):
         's': op['sgst'] + net_itc['s']
     }
     
+    # Run Algorithm
     paid, cash_fwd, bal_credit = calculate_smart_offset(L_fwd, C_avail)
     
     # --- 3. BUILD VISUAL DATA ---
@@ -606,7 +613,7 @@ def generate_master_dashboard(writer, portal_dict, books_dict, manual_inputs):
     sheet_name = "Master Dashboard"
     df.to_excel(writer, sheet_name=sheet_name, index=False)
     
-    # Formatting & Formulas (Compact)
+    # Formatting & Formulas
     wb = writer.book; ws = writer.sheets[sheet_name]
     s_sub = wb.add_format({'bold':True, 'bg_color':'#DCDCDC', 'border':1})
     s_num = wb.add_format({'num_format':'#,##0.00', 'border':1})
