@@ -379,6 +379,7 @@ def calculate_fixed_assets():
         print(f"FAR Error: {e}")
         return jsonify({'error': str(e)}), 500
     # --- GSTR-2B RECO (ZOHO vs PORTAL) ---
+# --- GSTR-2B RECO (ZOHO vs PORTAL) ---
 @app.route('/api/indirect-tax/reco-gstr2b-zoho', methods=['POST'])
 def reco_gstr2b_zoho_route():
     try:
@@ -388,8 +389,23 @@ def reco_gstr2b_zoho_route():
         file_portal = request.files['file_portal']
         file_zoho = request.files['file_zoho']
 
-        # Call the Zoho Engine
-        excel_file = generate_reco_report_zoho(file_portal, file_zoho)
+        # Capture Manual Inputs for Master Dashboard
+        manual_inputs = {
+            'sales': {
+                'taxable': float(request.form.get('sales_taxable', 0)),
+                'igst': float(request.form.get('sales_igst', 0)),
+                'cgst': float(request.form.get('sales_cgst', 0)),
+                'sgst': float(request.form.get('sales_sgst', 0)),
+            },
+            'opening': {
+                'igst': float(request.form.get('op_igst', 0)),
+                'cgst': float(request.form.get('op_cgst', 0)),
+                'sgst': float(request.form.get('op_sgst', 0)),
+            }
+        }
+
+        # Call the Zoho Engine with inputs
+        excel_file = generate_reco_report_zoho(file_portal, file_zoho, manual_inputs)
 
         return send_file(
             excel_file,
@@ -400,7 +416,6 @@ def reco_gstr2b_zoho_route():
 
     except Exception as e:
         print(f"Zoho Reco Error: {e}")
-        return jsonify({'error': str(e)}), 500
-    
+        return jsonify({'error': str(e)}), 500    
 if __name__ == '__main__':
     app.run(debug=True, port=5000)
