@@ -4,7 +4,7 @@ import {
   AlertCircle, Terminal as TerminalIcon, Flower, 
   TrendingUp, Wallet, Calendar, Shield, Cpu, Activity,
   Server, ArrowRight, Disc, MessageSquare, Sparkles, Brain, 
-  Send as SendIcon, Loader, Bot
+  Send as SendIcon, Loader, Bot, Settings, Key, Lock
 } from 'lucide-react';
 
 export default function RecoGSTR2BZoho() {
@@ -24,8 +24,12 @@ export default function RecoGSTR2BZoho() {
 
   const terminalRef = useRef(null);
 
-  // --- GEMINI AI STATE ---
+  // --- GEMINI AI & SETTINGS STATE ---
   const [showChat, setShowChat] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [userApiKey, setUserApiKey] = useState(''); 
+  const [storedApiKey, setStoredApiKey] = useState(''); 
+  
   const [chatMessages, setChatMessages] = useState([
     { role: 'ai', text: 'Neural Link established. I am the Black Rose Tax Assistant. Query me regarding GST protocols or reconciliation logic.' }
   ]);
@@ -35,9 +39,36 @@ export default function RecoGSTR2BZoho() {
   const [isSummarizing, setIsSummarizing] = useState(false);
   const chatEndRef = useRef(null);
 
+  // Load API Key from Local Storage on mount
+  useEffect(() => {
+    const savedKey = localStorage.getItem('BLACK_ROSE_API_KEY');
+    if (savedKey) {
+        setStoredApiKey(savedKey);
+        setUserApiKey(savedKey);
+    }
+  }, []);
+
+  const handleSaveSettings = () => {
+      localStorage.setItem('BLACK_ROSE_API_KEY', userApiKey);
+      setStoredApiKey(userApiKey);
+      setShowSettings(false);
+      setLogs(prev => [...prev, `[SYSTEM] Neural Link Protocol Updated.`]);
+  };
+
   // --- GEMINI API FUNCTION ---
   const callGeminiAPI = async (prompt, systemInstruction = '') => {
-    const apiKey = ""; // Provided by environment at runtime
+    // 1. Check for the key provided by the environment (Preview Mode)
+    let apiKey = ""; 
+
+    // 2. If environment key is empty, check user's local storage
+    if (!apiKey) {
+        apiKey = storedApiKey;
+    }
+
+    if (!apiKey) {
+        throw new Error("MISSING_KEY");
+    }
+
     const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
     
     const payload = {
@@ -46,9 +77,9 @@ export default function RecoGSTR2BZoho() {
     };
 
     let attempt = 0;
-    const delays = [1000, 2000, 4000, 8000, 16000];
+    const delays = [1000, 2000, 4000];
 
-    while (attempt <= 5) {
+    while (attempt <= 3) {
       try {
         const response = await fetch(url, {
           method: 'POST',
@@ -61,7 +92,7 @@ export default function RecoGSTR2BZoho() {
         const data = await response.json();
         return data.candidates?.[0]?.content?.parts?.[0]?.text || "No response generated.";
       } catch (err) {
-        if (attempt === 5) throw err;
+        if (attempt === 3) throw err;
         await new Promise(r => setTimeout(r, delays[attempt]));
         attempt++;
       }
@@ -83,7 +114,11 @@ export default function RecoGSTR2BZoho() {
       const aiResponse = await callGeminiAPI(userMsg, systemPrompt);
       setChatMessages(prev => [...prev, { role: 'ai', text: aiResponse }]);
     } catch (error) {
-      setChatMessages(prev => [...prev, { role: 'ai', text: "Connection interrupted. Neural Link unstable." }]);
+      if (error.message === "MISSING_KEY") {
+        setChatMessages(prev => [...prev, { role: 'ai', text: "ACCESS DENIED: Neural Link Configuration missing. Please click the Settings gear and input your API Access Token." }]);
+      } else {
+        setChatMessages(prev => [...prev, { role: 'ai', text: "Connection interrupted. Neural Link unstable." }]);
+      }
     } finally {
       setIsChatLoading(false);
     }
@@ -105,7 +140,11 @@ export default function RecoGSTR2BZoho() {
       const summary = await callGeminiAPI(prompt);
       setAiSummary(summary);
     } catch (error) {
-      setAiSummary("Failed to generate analysis matrix.");
+       if (error.message === "MISSING_KEY") {
+           setAiSummary("ERROR: API Token Missing. Check Settings.");
+       } else {
+           setAiSummary("Failed to generate analysis matrix.");
+       }
     } finally {
       setIsSummarizing(false);
     }
@@ -116,7 +155,7 @@ export default function RecoGSTR2BZoho() {
   }, [chatMessages, showChat]);
 
 
-  // --- PRESERVED LOGIC ---
+  // --- LOGIC ---
   const handleFileChange = (type, e) => {
     if (e.target.files[0]) {
         if (type === 'portal') setPortalFile(e.target.files[0]);
@@ -174,7 +213,7 @@ export default function RecoGSTR2BZoho() {
 
     setStatus('processing');
     setErrorMessage('');
-    setAiSummary(null); // Reset summary on new run
+    setAiSummary(null); 
     
     const formData = new FormData();
     formData.append('file_portal', portalFile);
@@ -195,7 +234,7 @@ export default function RecoGSTR2BZoho() {
         throw new Error(errData.error || 'Reconciliation Failed');
       }
 
-      await new Promise(r => setTimeout(r, 6500)); // Sync with logs
+      await new Promise(r => setTimeout(r, 6500)); 
 
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
@@ -211,33 +250,29 @@ export default function RecoGSTR2BZoho() {
     }
   };
 
-  // --- COMPACT UI COMPONENTS ---
+  // --- UPDATED UI COMPONENTS ---
 
-  // 1. Sleek Input Field
+  // FIXED: Expanded Input Field (Solves "out of place" issue)
   const CyberInput = ({ label, name, value, onChange, prefix }) => (
-    <div className="group relative flex items-center justify-between bg-black/20 border border-zinc-800 rounded-lg p-1 pr-3 focus-within:border-rose-500/50 focus-within:bg-black/40 transition-all hover:border-zinc-700">
-        <div className="flex flex-col px-3 py-1">
-             <label className="text-[9px] font-mono text-zinc-500 uppercase tracking-wider group-focus-within:text-rose-400 transition-colors">
-                {label}
-             </label>
-        </div>
-        <div className="flex items-center">
-            {prefix && <span className="text-zinc-600 text-xs font-mono mr-1">{prefix}</span>}
+    <div className="group relative flex flex-col gap-1 bg-black/20 border border-zinc-800 rounded-lg p-2 focus-within:border-rose-500/50 focus-within:bg-black/40 transition-all hover:border-zinc-700">
+        <label className="text-[9px] font-mono text-zinc-500 uppercase tracking-wider group-focus-within:text-rose-400 transition-colors">
+            {label}
+        </label>
+        <div className="flex items-center w-full">
+            {prefix && <span className="text-zinc-500 text-xs font-mono mr-1.5">{prefix}</span>}
             <input
                 type="number"
                 name={name}
                 value={value}
                 onChange={onChange}
                 placeholder="0.00"
-                className="w-20 bg-transparent text-right text-xs font-mono text-white placeholder-zinc-700 focus:outline-none"
+                className="w-full bg-transparent text-sm font-mono text-white placeholder-zinc-800 focus:outline-none"
             />
         </div>
     </div>
   );
 
-  // 2. Compact File Row (Replaces the big box)
   const CompactFileRow = ({ label, file, onFileChange, onRemove, accentColor, icon: Icon }) => {
-    // Dynamic color classes
     const colors = {
       rose: { bg: 'bg-rose-500/10', text: 'text-rose-500', border: 'hover:border-rose-500/30' },
       amber: { bg: 'bg-amber-500/10', text: 'text-amber-500', border: 'hover:border-amber-500/30' },
@@ -247,11 +282,9 @@ export default function RecoGSTR2BZoho() {
     return (
       <div className={`flex items-center justify-between p-2.5 bg-black/40 border border-zinc-800/60 rounded-lg transition-all ${colors.border} group`}>
          <div className="flex items-center gap-3">
-             {/* Icon Box */}
              <div className={`w-8 h-8 rounded-md ${colors.bg} flex items-center justify-center border border-white/5`}>
                  <Icon className={`w-4 h-4 ${colors.text}`} />
              </div>
-             {/* Text Info */}
              <div className="flex flex-col">
                  <span className="text-[9px] font-bold text-zinc-500 uppercase tracking-widest">{label}</span>
                  {file ? (
@@ -264,7 +297,6 @@ export default function RecoGSTR2BZoho() {
              </div>
          </div>
 
-         {/* Action Button */}
          {file ? (
             <button 
                 onClick={onRemove}
@@ -315,6 +347,19 @@ export default function RecoGSTR2BZoho() {
             </div>
             
             <div className="flex items-center gap-3">
+                 {/* SETTINGS BUTTON */}
+                 <button 
+                  onClick={() => setShowSettings(true)}
+                  className={`p-2 rounded-full border transition-all ${
+                    !storedApiKey 
+                    ? 'bg-amber-900/20 border-amber-500/50 text-amber-500 animate-pulse' 
+                    : 'bg-zinc-900/50 border-zinc-800 text-zinc-400 hover:border-white/20 hover:text-white'
+                  }`}
+                  title="Configure Neural Link (API Key)"
+                >
+                   <Settings className="w-4 h-4" />
+                </button>
+
                  {/* NEURAL LINK BUTTON */}
                 <button 
                   onClick={() => setShowChat(!showChat)}
@@ -325,7 +370,7 @@ export default function RecoGSTR2BZoho() {
                   }`}
                 >
                    <Brain className="w-3.5 h-3.5" />
-                   {showChat ? 'NEURAL LINK ACTIVE' : 'OPEN NEURAL LINK'}
+                   {showChat ? 'LINK ACTIVE' : 'OPEN CHAT'}
                 </button>
 
                 {/* Status Pill */}
@@ -346,23 +391,25 @@ export default function RecoGSTR2BZoho() {
           {/* --- LEFT COLUMN: INPUTS (8/12) --- */}
           <div className="lg:col-span-8 space-y-6">
             
-            {/* 1. DATA SOURCES (Refined & Compact) */}
+            {/* 1. DATA SOURCES */}
             <div className="rounded-2xl bg-zinc-900/30 backdrop-blur-md border border-white/5 p-6 relative overflow-hidden">
                 <div className="flex items-center justify-between mb-5">
                     <div className="flex items-center gap-2">
                         <div className="w-5 h-5 rounded flex items-center justify-center bg-rose-500/20 text-rose-500 text-xs font-bold font-mono">1</div>
                         <h3 className="text-sm font-bold text-zinc-300 uppercase tracking-wider">Source Ingestion</h3>
                     </div>
-                    {/* Compact Month Picker */}
-                    <div className="flex items-center gap-3 px-3 py-1.5 rounded-lg bg-black/20 border border-zinc-800">
-                        <Calendar className="w-3.5 h-3.5 text-zinc-500" />
-                        <div className="h-4 w-px bg-zinc-800" />
-                        <input 
+                    {/* FIXED: Month Picker Click Area */}
+                    <div className="relative group cursor-pointer w-40">
+                         <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                            <Calendar className="w-4 h-4 text-zinc-500 group-hover:text-rose-500 transition-colors" />
+                         </div>
+                         <input 
                             type="month" 
                             name="month"
                             value={inputs.month}
                             onChange={handleInputChange}
-                            className="bg-transparent text-xs font-mono text-zinc-300 focus:outline-none uppercase"
+                            onClick={(e) => { try { e.target.showPicker() } catch(e) {} }} 
+                            className="bg-black/20 border border-zinc-800 text-zinc-300 text-xs font-mono rounded-lg py-2 pl-10 pr-3 w-full focus:outline-none focus:border-rose-500/50 hover:border-zinc-700 transition-all cursor-pointer uppercase"
                         />
                     </div>
                 </div>
@@ -387,7 +434,7 @@ export default function RecoGSTR2BZoho() {
                 </div>
             </div>
 
-            {/* 2. FINANCIAL INPUTS (Refined & Compact) */}
+            {/* 2. FINANCIAL INPUTS */}
             <div className="rounded-2xl bg-zinc-900/30 backdrop-blur-md border border-white/5 p-6 relative overflow-hidden">
                 <div className="flex items-center gap-2 mb-6">
                     <div className="w-5 h-5 rounded flex items-center justify-center bg-emerald-500/20 text-emerald-500 text-xs font-bold font-mono">2</div>
@@ -404,7 +451,7 @@ export default function RecoGSTR2BZoho() {
                              <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Outward Supplies</span>
                         </div>
                         <div className="space-y-2">
-                            <CyberInput label="Taxable" name="sales_taxable" value={inputs.sales_taxable} onChange={handleInputChange} prefix="₹" />
+                            <CyberInput label="Taxable Value" name="sales_taxable" value={inputs.sales_taxable} onChange={handleInputChange} prefix="₹" />
                             <div className="grid grid-cols-3 gap-2">
                                 <CyberInput label="IGST" name="sales_igst" value={inputs.sales_igst} onChange={handleInputChange} />
                                 <CyberInput label="CGST" name="sales_cgst" value={inputs.sales_cgst} onChange={handleInputChange} />
@@ -420,10 +467,10 @@ export default function RecoGSTR2BZoho() {
                              <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Opening ITC</span>
                         </div>
                         <div className="space-y-2">
-                             <CyberInput label="Op. IGST" name="op_igst" value={inputs.op_igst} onChange={handleInputChange} prefix="₹" />
+                             <CyberInput label="Opening IGST" name="op_igst" value={inputs.op_igst} onChange={handleInputChange} prefix="₹" />
                              <div className="grid grid-cols-2 gap-2">
-                                <CyberInput label="Op. CGST" name="op_cgst" value={inputs.op_cgst} onChange={handleInputChange} prefix="₹" />
-                                <CyberInput label="Op. SGST" name="op_sgst" value={inputs.op_sgst} onChange={handleInputChange} prefix="₹" />
+                                <CyberInput label="Opening CGST" name="op_cgst" value={inputs.op_cgst} onChange={handleInputChange} prefix="₹" />
+                                <CyberInput label="Opening SGST" name="op_sgst" value={inputs.op_sgst} onChange={handleInputChange} prefix="₹" />
                              </div>
                         </div>
                     </div>
@@ -575,6 +622,66 @@ export default function RecoGSTR2BZoho() {
             )}
             
           </div>
+
+           {/* --- SETTINGS OVERLAY --- */}
+           {showSettings && (
+               <div className="absolute inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-300 p-4">
+                   <div className="w-full max-w-md bg-zinc-950 border border-zinc-800 rounded-2xl shadow-2xl p-6 relative overflow-hidden">
+                       <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-amber-500 to-rose-500" />
+                       
+                       <div className="flex items-center justify-between mb-6">
+                           <div className="flex items-center gap-3">
+                               <div className="p-2 bg-amber-900/20 rounded-lg border border-amber-500/30">
+                                   <Settings className="w-5 h-5 text-amber-500" />
+                               </div>
+                               <div>
+                                   <h3 className="text-sm font-bold text-white uppercase tracking-wider">Protocol Config</h3>
+                                   <p className="text-[10px] text-zinc-500 font-mono">Setup Neural Link (Google Gemini)</p>
+                               </div>
+                           </div>
+                           <button onClick={() => setShowSettings(false)} className="text-zinc-500 hover:text-white"><X className="w-5 h-5"/></button>
+                       </div>
+
+                       <div className="space-y-4">
+                           <div className="space-y-2">
+                               <label className="text-[10px] font-mono text-zinc-400 uppercase tracking-widest ml-1 flex items-center gap-2">
+                                   <Key className="w-3 h-3" /> API Access Token
+                               </label>
+                               <div className="relative">
+                                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                        <Lock className="w-4 h-4 text-zinc-600" />
+                                    </div>
+                                   <input 
+                                     type="password" 
+                                     value={userApiKey}
+                                     onChange={(e) => setUserApiKey(e.target.value)}
+                                     placeholder="Paste Gemini API Key here..."
+                                     className="w-full bg-black border border-zinc-800 rounded-xl pl-10 pr-4 py-3 text-xs text-white placeholder-zinc-700 focus:border-amber-500/50 focus:ring-1 focus:ring-amber-500/50 outline-none font-mono"
+                                   />
+                               </div>
+                               <p className="text-[10px] text-zinc-600 pl-1">
+                                   Key is stored locally on your device. Never shared.
+                               </p>
+                           </div>
+
+                           <div className="pt-2">
+                               <button 
+                                 onClick={handleSaveSettings}
+                                 className="w-full py-3 bg-white text-black font-bold text-xs rounded-xl hover:bg-zinc-200 transition-colors flex items-center justify-center gap-2"
+                               >
+                                   <CheckCircle className="w-4 h-4" /> Initialize Protocol
+                               </button>
+                           </div>
+
+                           <div className="text-center pt-2">
+                               <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer" className="text-[10px] text-zinc-500 hover:text-amber-500 underline decoration-zinc-700 underline-offset-4">
+                                   Generate Access Token (Google AI Studio)
+                               </a>
+                           </div>
+                       </div>
+                   </div>
+               </div>
+           )}
 
            {/* --- NEURAL CHAT OVERLAY (Right Side Slide-out) --- */}
            {showChat && (
