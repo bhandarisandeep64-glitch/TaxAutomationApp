@@ -2,8 +2,11 @@ import pandas as pd
 import numpy as np
 import io
 import re
+import openpyxl
+from openpyxl.utils import get_column_letter
+from openpyxl.styles import Font
 
-# 1. The Tax Doubling Magic
+# 1. Tax Doubling Magic
 def format_tax_rate(val):
     if pd.isna(val): return val
     val_str = str(val)
@@ -13,12 +16,14 @@ def format_tax_rate(val):
         doubled = num * 2
         return f"{doubled:g}% GST S"
     return val_str
-def clean_purchase_data(df, purchase_type='Regular'):
-    # 0. BULLETPROOFING: Reset row index and drop any duplicate columns immediately
+
+# 2. Upgraded Cleaner (Keeps your logic, adds duplicate column protection)
+def clean_purchase_data(df, is_rcm=False, is_import=False):
+    # Reset index and drop duplicate columns immediately
     df = df.reset_index(drop=True)
     df = df.loc[:, ~df.columns.duplicated()].copy()
 
-    # Ensure required columns exist to avoid crashes
+    # Ensure required columns exist
     for col in ['Account', 'Label', 'Date', 'Debit', 'Credit', 'Taxable Amt.']:
         if col not in df.columns: df[col] = 0.0 if 'Amt' in col or col in ['Debit', 'Credit'] else ''
 
@@ -26,10 +31,9 @@ def clean_purchase_data(df, purchase_type='Regular'):
     df['Credit'] = pd.to_numeric(df['Credit'], errors='coerce').fillna(0)
     df['Taxable Amt.'] = pd.to_numeric(df['Taxable Amt.'], errors='coerce').fillna(0)
 
-    # 2. Extract Tax Amount (Keeping it positive for Reco as requested!)
+    # Tax Amount (Keeping positive for Reco)
     tax_amount = df[['Debit', 'Credit']].max(axis=1)
 
-    # Identify tax types from the Account column
     account_series = df['Account'].astype(str)
     is_igst = account_series.str.contains('igst', case=False, na=False)
     is_cgst = account_series.str.contains('cgst', case=False, na=False)
@@ -39,11 +43,10 @@ def clean_purchase_data(df, purchase_type='Regular'):
     df['CGST'] = np.where(is_cgst, tax_amount, 0.0)
     df['SGST'] = np.where(is_sgst, tax_amount, 0.0)
 
-    # Auto-fill SGST if missing
     mask_missing_sgst = (df['CGST'] != 0) & (df['SGST'] == 0)
     df.loc[mask_missing_sgst, 'SGST'] = df.loc[mask_missing_sgst, 'CGST']
 
-    # Rename Columns
+    # Rename to Master Format
     df = df.rename(columns={
         'Partner': 'Vendor Name',
         'Number': 'Invoice Number',
@@ -51,71 +54,131 @@ def clean_purchase_data(df, purchase_type='Regular'):
         'Taxable Amt.': 'Taxable Amount'
     })
     
-    # BULLETPROOFING PART 2: Drop duplicates again just in case renaming created a collision
     df = df.loc[:, ~df.columns.duplicated()].copy()
-    
     df['Tax Rate'] = df['Tax Rate'].apply(format_tax_rate)
-    
-    # Calculate Total based on the raw positive values
     df['Total'] = df['Taxable Amount'] + df['IGST'] + df['CGST'] + df['SGST']
 
     if 'Date' in df.columns:
-        df['Date'] = pd.to_datetime(df['Date'], errors='coerce').dt.strftime('%Y-%m-%d')
+        df['Date'] = pd.to_datetime(df['Date'], errors='coerce').dt.strftime('%d-%m-%Y')
 
-    # Add the specific category tag (Regular, RCM, or Import)
-    df['Type'] = purchase_type
+    # Assign specific type
+    if is_rcm: df['Type'] = 'RCM'
+    elif is_import: df['Type'] = 'Import'
+    else: df['Type'] = 'Regular'
 
     final_columns = [
         'Vendor Name', 'GSTIN', 'Date', 'Reference', 'Invoice Number', 
         'Account', 'Tax Rate', 'Type', 'Total', 'Taxable Amount', 'IGST', 'CGST', 'SGST'
     ]
     
-    # Safely add any missing final columns
     for col in final_columns:
         if col not in df.columns: df[col] = '' 
             
     return df[final_columns]
 
-# --- THE MAIN ENGINE ROUTE ---
+# 3. Wrapper Engine using YOUR original Dictionary & Mask logic
 def generate_mario_purchase_report(files_dict):
-    dataframes = []
+    processed_results = {}
 
-    def load_and_process(file_key, purchase_type):
-        if file_key in files_dict and files_dict[file_key].filename != '':
-            df = pd.read_excel(files_dict[file_key])
-            cleaned_df = clean_purchase_data(df, purchase_type=purchase_type)
-            dataframes.append(cleaned_df)
+    def load_slot(key):
+        if key in files_dict and files_dict[key].filename != '':
+            return pd.read_excel(files_dict[key])
+        return None
 
-    # Process all 6 possible uploaded files into their correct categories
-    load_and_process('file_reg_cgst', 'Regular')
-    load_and_process('file_reg_igst', 'Regular')
-    load_and_process('file_rcm_cgst', 'RCM')
-    load_and_process('file_rcm_igst', 'RCM')
-    load_and_process('file_import_cgst', 'Import')
-    load_and_process('file_import_igst', 'Import')
+    # A. REGULAR
+    reg_cgst = load_slot('file_reg_cgst')
+    reg_igst = load_slot('file_reg_igst')
+    reg_dfs = [df for df in [reg_cgst, reg_igst] if df is not None]
 
-    if not dataframes:
-        raise ValueError("Please upload at least one valid file.")
+    if reg_dfs:
+        reg_df = pd.concat(reg_dfs, ignore_index=True)
+        if 'Credit' in reg_df.columns:
+            v_cn_mask = pd.to_numeric(reg_df['Credit'], errors='coerce').fillna(0) != 0
+            reg_normal = reg_df[~v_cn_mask].copy()
+            reg_cn = reg_df[v_cn_mask].copy()
+            
+            if not reg_normal.empty: processed_results['B2B as per Books'] = clean_purchase_data(reg_normal, is_rcm=False)
+            if not reg_cn.empty: processed_results['V CN as per Books'] = clean_purchase_data(reg_cn, is_rcm=False)
+        else:
+            processed_results['B2B as per Books'] = clean_purchase_data(reg_df, is_rcm=False)
 
-    combined_df = pd.concat(dataframes, ignore_index=True)
+    # B. RCM
+    rcm_cgst = load_slot('file_rcm_cgst')
+    rcm_igst = load_slot('file_rcm_igst')
+    rcm_dfs = [df for df in [rcm_cgst, rcm_igst] if df is not None]
 
-    # 3. Create the Grand Total Row
-    totals = {
-        'Vendor Name': 'GRAND TOTAL',
-        'Total': combined_df['Total'].sum(),
-        'Taxable Amount': combined_df['Taxable Amount'].sum(),
-        'IGST': combined_df['IGST'].sum(),
-        'CGST': combined_df['CGST'].sum(),
-        'SGST': combined_df['SGST'].sum()
-    }
-    
-    summary_row = pd.DataFrame([totals])
-    final_df = pd.concat([combined_df, summary_row], ignore_index=True)
+    if rcm_dfs:
+        rcm_df = pd.concat(rcm_dfs, ignore_index=True)
+        if 'Debit' in rcm_df.columns:
+            rcm_cn_mask = pd.to_numeric(rcm_df['Debit'], errors='coerce').fillna(0) != 0
+            rcm_normal = rcm_df[~rcm_cn_mask].copy()
+            rcm_cn = rcm_df[rcm_cn_mask].copy()
+            
+            if not rcm_normal.empty: processed_results['RCM as per Books'] = clean_purchase_data(rcm_normal, is_rcm=True)
+            if not rcm_cn.empty: processed_results['V CN RCM as per Books'] = clean_purchase_data(rcm_cn, is_rcm=True)
+        else:
+            processed_results['RCM as per Books'] = clean_purchase_data(rcm_df, is_rcm=True)
 
-    # Stream the file directly
+    # C. IMPORT
+    imp_cgst = load_slot('file_import_cgst')
+    imp_igst = load_slot('file_import_igst')
+    imp_dfs = [df for df in [imp_cgst, imp_igst] if df is not None]
+
+    if imp_dfs:
+        imp_df = pd.concat(imp_dfs, ignore_index=True)
+        if 'Credit' in imp_df.columns:
+            imp_cn_mask = pd.to_numeric(imp_df['Credit'], errors='coerce').fillna(0) != 0
+            imp_normal = imp_df[~imp_cn_mask].copy()
+            imp_cn = imp_df[imp_cn_mask].copy()
+            
+            if not imp_normal.empty: processed_results['Import as per Books'] = clean_purchase_data(imp_normal, is_import=True)
+            if not imp_cn.empty: processed_results['Import CN as per Books'] = clean_purchase_data(imp_cn, is_import=True)
+        else:
+            processed_results['Import as per Books'] = clean_purchase_data(imp_df, is_import=True)
+
+    if not processed_results:
+        raise ValueError("No valid data found in uploaded files.")
+
+    # 4. Stream to Excel & Apply Your Original Openpyxl Subtotal Formulas
     output = io.BytesIO()
-    with pd.ExcelWriter(output, engine='openpyxl') as writer:
-        final_df.to_excel(writer, index=False)
-    output.seek(0)
     
-    return output
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        for sheet_name, df in processed_results.items():
+            if not df.empty:
+                df.to_excel(writer, sheet_name=sheet_name, index=False)
+
+    # Reload with openpyxl in memory to add formatting
+    output.seek(0)
+    wb = openpyxl.load_workbook(output)
+    sum_cols = ['Total', 'Taxable Amount', 'IGST', 'CGST', 'SGST']
+
+    for sheet_name in wb.sheetnames:
+        ws = wb[sheet_name]
+        max_row = ws.max_row
+        if max_row < 2: continue
+
+        ws.auto_filter.ref = ws.dimensions
+        
+        total_row_idx = max_row + 1
+        ws.cell(row=total_row_idx, column=1).value = "GRAND TOTAL"
+        ws.cell(row=total_row_idx, column=1).font = Font(bold=True)
+
+        headers = [cell.value for cell in ws[1]]
+        for col_name in sum_cols:
+            if col_name in headers:
+                col_idx = headers.index(col_name) + 1
+                col_letter = get_column_letter(col_idx)
+                
+                # Excel Subtotal Formula (Updates if you filter rows!)
+                formula = f"=SUBTOTAL(9, {col_letter}2:{col_letter}{max_row})"
+                
+                cell = ws.cell(row=total_row_idx, column=col_idx)
+                cell.value = formula
+                cell.font = Font(bold=True)
+                cell.number_format = '#,##0.00'
+
+    final_output = io.BytesIO()
+    wb.save(final_output)
+    final_output.seek(0)
+
+    return final_output
