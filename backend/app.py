@@ -25,6 +25,9 @@ from modules.indirect_tax.gstr1_zoho import process_gstr1_zoho
 from modules.indirect_tax.gstr2b_reco_engine import generate_reco_report
 from modules.indirect_tax.gstr2b_reco_zoho_engine import generate_reco_report_zoho
 
+# --- 5. MARIO IMPORTS ---
+from modules.mario.sales import generate_mario_sales_report
+
 app = Flask(__name__)
 CORS(app)
 
@@ -422,5 +425,25 @@ def reco_gstr2b_zoho_route():
     except Exception as e:
         print(f"Zoho Reco Error: {e}")
         return jsonify({'error': str(e)}), 500   
+# ==========================================
+#  MARIO CUSTOM ROUTES
+# ==========================================
+
+@app.route('/api/mario/sales', methods=['POST'])
+def run_mario_sales():
+    try:
+        # Pass the entire dictionary of uploaded files to our engine
+        excel_file = generate_mario_sales_report(request.files)
+
+        return send_file(
+            excel_file,
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            download_name='Mario_Combined_Sales.xlsx',
+            as_attachment=True
+        )
+
+    except Exception as e:
+        print(f"Mario Sales Error: {e}")
+        return jsonify({'error': str(e)}), 500
 if __name__ == '__main__':
     app.run(debug=True, port=5000)

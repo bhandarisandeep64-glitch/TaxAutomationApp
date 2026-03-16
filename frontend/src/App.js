@@ -8,6 +8,7 @@ import Sidebar from './components/Sidebar';
 import ChatWidget from './components/ChatWidget';
 import AdminDashboard from './pages/AdminDashboard';
 import ComplianceTable from './pages/ComplianceTable';
+import MarioSales from './components/MarioSales';
 
 // --- MODULES ---
 import TdsOdoo from './modules/DirectTax/TdsOdoo';
@@ -92,6 +93,7 @@ const [user, setUser] = useState(() => {
         case 'gstr2b_zoho': return 'GSTR-2B Processing | Zoho';
         case 'gstr3b_odoo': return 'GSTR-3B Reco (Odoo)';
         case 'gstr3b_zoho': return 'GSTR-3B Reco (Zoho)';
+        case 'mario_sales': return 'Mario | Sales Converter';
         default: return 'Workspace';
     }
   };
@@ -120,6 +122,7 @@ const [user, setUser] = useState(() => {
       if (currentModule === 'gstr2b_zoho') return <Gstr2bZoho />;
       if (currentModule === 'gstr3b_odoo') return <RecoGSTR2B />; 
       if (currentModule === 'gstr3b_zoho') return <RecoGSTR2BZoho />; 
+      if (currentModule === 'mario_sales') return <MarioSales />;
       
       return (
         <div className="flex flex-col items-center justify-center h-[60vh] text-center">

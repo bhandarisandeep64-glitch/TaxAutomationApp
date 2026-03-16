@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { FileText, CheckCircle, Users, LogOut, ChevronDown, ChevronRight, Lock, Landmark, Flower } from 'lucide-react'; 
+import { FileText, CheckCircle, Users, LogOut, ChevronDown, ChevronRight, Lock, Landmark, Flower, TrendingUp } from 'lucide-react'; 
 import { THEME } from '../constants/theme';
 
 export default function Sidebar({ user, onNavigate, onLogout, currentModule, mobileMenuOpen }) {
@@ -45,6 +45,15 @@ export default function Sidebar({ user, onNavigate, onLogout, currentModule, mob
             { title: "Odoo", id: "gstr3b_odoo" },
             { title: "Zoho", id: "gstr3b_zoho" }
         ] }
+      ]
+    },
+  {
+      title: "Mario",
+      id: "mario",
+      icon: TrendingUp,
+      sub: [
+        { title: "Sales", id: "mario_sales" },
+        { title: "Purchase", id: "mario_purchase" } 
       ]
     }
   ];
