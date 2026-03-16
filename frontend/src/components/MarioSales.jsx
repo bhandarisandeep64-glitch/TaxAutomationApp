@@ -70,7 +70,7 @@ export default function MarioSales() {
 
     try {
       // NOTE: Update the URL if your backend is hosted differently
-      const response = await fetch('https://taxautomationapp-1.onrender.com/api/mario/sales', {
+      const response = await fetch('https://taxautomationapp.onrender.com/api/mario/sales', {
         method: 'POST',
         body: formData,
       });
