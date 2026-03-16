@@ -6,24 +6,34 @@ import openpyxl
 from openpyxl.utils import get_column_letter
 from openpyxl.styles import Font
 
-# 1. Tax Doubling Magic
-def format_tax_rate(val):
-    if pd.isna(val): return val
-    val_str = str(val)
-    match = re.search(r'([0-9.]+)', val_str)
+# 1. Smarter Tax Formatting Magic
+def format_tax_rate(label, account):
+    if pd.isna(label): return label
+    label_str = str(label)
+    account_str = str(account).lower()
+    
+    # Only trigger if there is a number explicitly followed by a % sign
+    match = re.search(r'([0-9.]+)\s*%', label_str)
     if match:
         num = float(match.group(1))
+        
+        # If it's an IGST transaction, do NOT double it
+        if 'igst' in account_str or 'igst' in label_str.lower():
+            return f"{num:g}% IGST S"
+        
+        # If it's CGST or SGST, double it
         doubled = num * 2
         return f"{doubled:g}% GST S"
-    return val_str
+        
+    # If no % sign is found (like bank descriptions), return exactly as is!
+    return label_str
 
-# 2. Upgraded Cleaner (Keeps your logic, adds duplicate column protection)
-def clean_purchase_data(df, is_rcm=False, is_import=False):
-    # Reset index and drop duplicate columns immediately
+def clean_purchase_data(df, purchase_type='Regular'):
+    # 0. BULLETPROOFING: Reset row index and drop any duplicate columns immediately
     df = df.reset_index(drop=True)
     df = df.loc[:, ~df.columns.duplicated()].copy()
 
-    # Ensure required columns exist
+    # Ensure required columns exist to avoid crashes
     for col in ['Account', 'Label', 'Date', 'Debit', 'Credit', 'Taxable Amt.']:
         if col not in df.columns: df[col] = 0.0 if 'Amt' in col or col in ['Debit', 'Credit'] else ''
 
@@ -31,9 +41,21 @@ def clean_purchase_data(df, is_rcm=False, is_import=False):
     df['Credit'] = pd.to_numeric(df['Credit'], errors='coerce').fillna(0)
     df['Taxable Amt.'] = pd.to_numeric(df['Taxable Amt.'], errors='coerce').fillna(0)
 
-    # Tax Amount (Keeping positive for Reco)
+    # 1. IDENTIFY SHEET TABS (Magic sorting for CNs)
+    if purchase_type == 'RCM':
+        is_cn = df['Debit'] != 0  # In RCM, Debit means Credit Note
+        df['Sheet_Category'] = np.where(is_cn, 'CN', 'RCM')
+    elif purchase_type == 'Import':
+        is_cn = df['Credit'] != 0
+        df['Sheet_Category'] = np.where(is_cn, 'CN', 'Import')
+    else: # Regular
+        is_cn = df['Credit'] != 0
+        df['Sheet_Category'] = np.where(is_cn, 'CN', 'Purchase')
+
+    # 2. Extract Tax Amount (Keeping it positive for Reco as requested!)
     tax_amount = df[['Debit', 'Credit']].max(axis=1)
 
+    # Identify tax types from the Account column
     account_series = df['Account'].astype(str)
     is_igst = account_series.str.contains('igst', case=False, na=False)
     is_cgst = account_series.str.contains('cgst', case=False, na=False)
@@ -43,10 +65,11 @@ def clean_purchase_data(df, is_rcm=False, is_import=False):
     df['CGST'] = np.where(is_cgst, tax_amount, 0.0)
     df['SGST'] = np.where(is_sgst, tax_amount, 0.0)
 
+    # Auto-fill SGST if missing
     mask_missing_sgst = (df['CGST'] != 0) & (df['SGST'] == 0)
     df.loc[mask_missing_sgst, 'SGST'] = df.loc[mask_missing_sgst, 'CGST']
 
-    # Rename to Master Format
+    # Rename Columns
     df = df.rename(columns={
         'Partner': 'Vendor Name',
         'Number': 'Invoice Number',
@@ -54,21 +77,26 @@ def clean_purchase_data(df, is_rcm=False, is_import=False):
         'Taxable Amt.': 'Taxable Amount'
     })
     
+    # BULLETPROOFING PART 2
     df = df.loc[:, ~df.columns.duplicated()].copy()
-    df['Tax Rate'] = df['Tax Rate'].apply(format_tax_rate)
+    
+    # Apply the new smart tax formatter, passing both the Label and the Account Name
+    df['Tax Rate'] = df.apply(lambda row: format_tax_rate(row['Tax Rate'], row['Account']), axis=1)
+    
+    # Rename CGST/SGST to GST in the Account column, leaving IGST alone
+    df['Account'] = df['Account'].astype(str).str.replace(r'[CS]GST', 'GST', regex=True, flags=re.IGNORECASE)
+    
+    # Calculate Total based on the raw positive values
     df['Total'] = df['Taxable Amount'] + df['IGST'] + df['CGST'] + df['SGST']
 
     if 'Date' in df.columns:
-        df['Date'] = pd.to_datetime(df['Date'], errors='coerce').dt.strftime('%d-%m-%Y')
+        df['Date'] = pd.to_datetime(df['Date'], errors='coerce').dt.strftime('%Y-%m-%d')
 
-    # Assign specific type
-    if is_rcm: df['Type'] = 'RCM'
-    elif is_import: df['Type'] = 'Import'
-    else: df['Type'] = 'Regular'
+    df['Type'] = purchase_type
 
     final_columns = [
         'Vendor Name', 'GSTIN', 'Date', 'Reference', 'Invoice Number', 
-        'Account', 'Tax Rate', 'Type', 'Total', 'Taxable Amount', 'IGST', 'CGST', 'SGST'
+        'Account', 'Tax Rate', 'Type', 'Total', 'Taxable Amount', 'IGST', 'CGST', 'SGST', 'Sheet_Category'
     ]
     
     for col in final_columns:
@@ -76,76 +104,51 @@ def clean_purchase_data(df, is_rcm=False, is_import=False):
             
     return df[final_columns]
 
-# 3. Wrapper Engine using YOUR original Dictionary & Mask logic
+# --- THE MAIN ENGINE ROUTE ---
 def generate_mario_purchase_report(files_dict):
-    processed_results = {}
+    dataframes = []
 
-    def load_slot(key):
-        if key in files_dict and files_dict[key].filename != '':
-            return pd.read_excel(files_dict[key])
-        return None
+    def load_and_process(file_key, purchase_type):
+        if file_key in files_dict and files_dict[file_key].filename != '':
+            df = pd.read_excel(files_dict[file_key])
+            cleaned_df = clean_purchase_data(df, purchase_type=purchase_type)
+            dataframes.append(cleaned_df)
 
-    # A. REGULAR
-    reg_cgst = load_slot('file_reg_cgst')
-    reg_igst = load_slot('file_reg_igst')
-    reg_dfs = [df for df in [reg_cgst, reg_igst] if df is not None]
+    # Process files
+    load_and_process('file_reg_cgst', 'Regular')
+    load_and_process('file_reg_igst', 'Regular')
+    load_and_process('file_rcm_cgst', 'RCM')
+    load_and_process('file_rcm_igst', 'RCM')
+    load_and_process('file_import_cgst', 'Import')
+    load_and_process('file_import_igst', 'Import')
 
-    if reg_dfs:
-        reg_df = pd.concat(reg_dfs, ignore_index=True)
-        if 'Credit' in reg_df.columns:
-            v_cn_mask = pd.to_numeric(reg_df['Credit'], errors='coerce').fillna(0) != 0
-            reg_normal = reg_df[~v_cn_mask].copy()
-            reg_cn = reg_df[v_cn_mask].copy()
-            
-            if not reg_normal.empty: processed_results['B2B as per Books'] = clean_purchase_data(reg_normal, is_rcm=False)
-            if not reg_cn.empty: processed_results['V CN as per Books'] = clean_purchase_data(reg_cn, is_rcm=False)
-        else:
-            processed_results['B2B as per Books'] = clean_purchase_data(reg_df, is_rcm=False)
+    if not dataframes:
+        raise ValueError("Please upload at least one valid file.")
 
-    # B. RCM
-    rcm_cgst = load_slot('file_rcm_cgst')
-    rcm_igst = load_slot('file_rcm_igst')
-    rcm_dfs = [df for df in [rcm_cgst, rcm_igst] if df is not None]
+    combined_df = pd.concat(dataframes, ignore_index=True)
 
-    if rcm_dfs:
-        rcm_df = pd.concat(rcm_dfs, ignore_index=True)
-        if 'Debit' in rcm_df.columns:
-            rcm_cn_mask = pd.to_numeric(rcm_df['Debit'], errors='coerce').fillna(0) != 0
-            rcm_normal = rcm_df[~rcm_cn_mask].copy()
-            rcm_cn = rcm_df[rcm_cn_mask].copy()
-            
-            if not rcm_normal.empty: processed_results['RCM as per Books'] = clean_purchase_data(rcm_normal, is_rcm=True)
-            if not rcm_cn.empty: processed_results['V CN RCM as per Books'] = clean_purchase_data(rcm_cn, is_rcm=True)
-        else:
-            processed_results['RCM as per Books'] = clean_purchase_data(rcm_df, is_rcm=True)
-
-    # C. IMPORT
-    imp_cgst = load_slot('file_import_cgst')
-    imp_igst = load_slot('file_import_igst')
-    imp_dfs = [df for df in [imp_cgst, imp_igst] if df is not None]
-
-    if imp_dfs:
-        imp_df = pd.concat(imp_dfs, ignore_index=True)
-        if 'Credit' in imp_df.columns:
-            imp_cn_mask = pd.to_numeric(imp_df['Credit'], errors='coerce').fillna(0) != 0
-            imp_normal = imp_df[~imp_cn_mask].copy()
-            imp_cn = imp_df[imp_cn_mask].copy()
-            
-            if not imp_normal.empty: processed_results['Import as per Books'] = clean_purchase_data(imp_normal, is_import=True)
-            if not imp_cn.empty: processed_results['Import CN as per Books'] = clean_purchase_data(imp_cn, is_import=True)
-        else:
-            processed_results['Import as per Books'] = clean_purchase_data(imp_df, is_import=True)
-
-    if not processed_results:
-        raise ValueError("No valid data found in uploaded files.")
-
-    # 4. Stream to Excel & Apply Your Original Openpyxl Subtotal Formulas
+    # Output Stream
     output = io.BytesIO()
     
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
-        for sheet_name, df in processed_results.items():
-            if not df.empty:
-                df.to_excel(writer, sheet_name=sheet_name, index=False)
+        for sheet_name in ['Purchase', 'RCM', 'Import', 'CN']:
+            sheet_df = combined_df[combined_df['Sheet_Category'] == sheet_name].copy()
+            
+            if not sheet_df.empty:
+                sheet_df = sheet_df.drop(columns=['Sheet_Category'])
+                
+                totals = {
+                    'Vendor Name': 'GRAND TOTAL',
+                    'Total': sheet_df['Total'].sum(),
+                    'Taxable Amount': sheet_df['Taxable Amount'].sum(),
+                    'IGST': sheet_df['IGST'].sum(),
+                    'CGST': sheet_df['CGST'].sum(),
+                    'SGST': sheet_df['SGST'].sum()
+                }
+                summary_row = pd.DataFrame([totals])
+                final_sheet = pd.concat([sheet_df, summary_row], ignore_index=True)
+                
+                final_sheet.to_excel(writer, sheet_name=sheet_name, index=False)
 
     # Reload with openpyxl in memory to add formatting
     output.seek(0)
@@ -169,7 +172,6 @@ def generate_mario_purchase_report(files_dict):
                 col_idx = headers.index(col_name) + 1
                 col_letter = get_column_letter(col_idx)
                 
-                # Excel Subtotal Formula (Updates if you filter rows!)
                 formula = f"=SUBTOTAL(9, {col_letter}2:{col_letter}{max_row})"
                 
                 cell = ws.cell(row=total_row_idx, column=col_idx)
