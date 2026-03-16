@@ -13,8 +13,10 @@ def format_tax_rate(val):
         doubled = num * 2
         return f"{doubled:g}% GST S"
     return val_str
-
 def clean_purchase_data(df, purchase_type='Regular'):
+    # --- NEW MAGIC LINE: Automatically delete duplicate Odoo columns ---
+    df = df.loc[:, ~df.columns.duplicated()]
+
     # Ensure required columns exist to avoid crashes
     for col in ['Account', 'Label', 'Date', 'Debit', 'Credit', 'Taxable Amt.']:
         if col not in df.columns: df[col] = 0.0 if 'Amt' in col or col in ['Debit', 'Credit'] else ''
@@ -24,7 +26,6 @@ def clean_purchase_data(df, purchase_type='Regular'):
     df['Taxable Amt.'] = pd.to_numeric(df['Taxable Amt.'], errors='coerce').fillna(0)
 
     # 2. Extract Tax Amount (Keeping it positive for Reco as requested!)
-    # Since Odoo puts the amount in either Debit OR Credit, taking the max gets the exact positive value
     tax_amount = df[['Debit', 'Credit']].max(axis=1)
 
     # Identify tax types from the Account column
