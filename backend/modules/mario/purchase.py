@@ -14,8 +14,9 @@ def format_tax_rate(val):
         return f"{doubled:g}% GST S"
     return val_str
 def clean_purchase_data(df, purchase_type='Regular'):
-    # --- NEW MAGIC LINE: Automatically delete duplicate Odoo columns ---
-    df = df.loc[:, ~df.columns.duplicated()]
+    # 0. BULLETPROOFING: Reset row index and drop any duplicate columns immediately
+    df = df.reset_index(drop=True)
+    df = df.loc[:, ~df.columns.duplicated()].copy()
 
     # Ensure required columns exist to avoid crashes
     for col in ['Account', 'Label', 'Date', 'Debit', 'Credit', 'Taxable Amt.']:
@@ -42,13 +43,16 @@ def clean_purchase_data(df, purchase_type='Regular'):
     mask_missing_sgst = (df['CGST'] != 0) & (df['SGST'] == 0)
     df.loc[mask_missing_sgst, 'SGST'] = df.loc[mask_missing_sgst, 'CGST']
 
-    # Rename and Format Columns to match Mario Sales
+    # Rename Columns
     df = df.rename(columns={
         'Partner': 'Vendor Name',
         'Number': 'Invoice Number',
         'Label': 'Tax Rate',
         'Taxable Amt.': 'Taxable Amount'
     })
+    
+    # BULLETPROOFING PART 2: Drop duplicates again just in case renaming created a collision
+    df = df.loc[:, ~df.columns.duplicated()].copy()
     
     df['Tax Rate'] = df['Tax Rate'].apply(format_tax_rate)
     
@@ -66,6 +70,7 @@ def clean_purchase_data(df, purchase_type='Regular'):
         'Account', 'Tax Rate', 'Type', 'Total', 'Taxable Amount', 'IGST', 'CGST', 'SGST'
     ]
     
+    # Safely add any missing final columns
     for col in final_columns:
         if col not in df.columns: df[col] = '' 
             
