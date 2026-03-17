@@ -6,7 +6,7 @@ import openpyxl
 from openpyxl.utils import get_column_letter
 from openpyxl.styles import Font
 
-# 1. Smarter Tax Formatting Magic
+# 1. Smarter Tax Formatting Magic (Fixed 'S' to 'P')
 def format_tax_rate(label, account):
     if pd.isna(label): return label
     label_str = str(label)
@@ -19,11 +19,11 @@ def format_tax_rate(label, account):
         
         # If it's an IGST transaction, do NOT double it
         if 'igst' in account_str or 'igst' in label_str.lower():
-            return f"{num:g}% IGST S"
+            return f"{num:g}% IGST P"
         
         # If it's CGST or SGST, double it
         doubled = num * 2
-        return f"{doubled:g}% GST S"
+        return f"{doubled:g}% GST P"
         
     # If no % sign is found (like bank descriptions), return exactly as is!
     return label_str
@@ -137,18 +137,8 @@ def generate_mario_purchase_report(files_dict):
             if not sheet_df.empty:
                 sheet_df = sheet_df.drop(columns=['Sheet_Category'])
                 
-                totals = {
-                    'Vendor Name': 'GRAND TOTAL',
-                    'Total': sheet_df['Total'].sum(),
-                    'Taxable Amount': sheet_df['Taxable Amount'].sum(),
-                    'IGST': sheet_df['IGST'].sum(),
-                    'CGST': sheet_df['CGST'].sum(),
-                    'SGST': sheet_df['SGST'].sum()
-                }
-                summary_row = pd.DataFrame([totals])
-                final_sheet = pd.concat([sheet_df, summary_row], ignore_index=True)
-                
-                final_sheet.to_excel(writer, sheet_name=sheet_name, index=False)
+                # We removed the pandas summary_row here so it doesn't double up!
+                sheet_df.to_excel(writer, sheet_name=sheet_name, index=False)
 
     # Reload with openpyxl in memory to add formatting
     output.seek(0)
