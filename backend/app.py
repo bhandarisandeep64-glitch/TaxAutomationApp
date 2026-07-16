@@ -45,13 +45,12 @@ from modules.mario.purchase import generate_mario_purchase_report
 app = Flask(__name__)
 init_db(app)
 
-# CORS is restricted to known frontend origins via the ALLOWED_ORIGINS env var
-# (comma-separated). Falls back to allow-all only if the var is unset, so a
-# missing env var can't silently lock out a legitimate frontend in prod --
-# but you should set ALLOWED_ORIGINS on Render as soon as you know the
-# frontend's real origin.
+# CORS is restricted to known frontend origins. Set via the ALLOWED_ORIGINS
+# env var (comma-separated) to override without a code change; otherwise
+# falls back to the known production frontend + local dev.
+_default_origins = ['https://taxautomationapp-1.onrender.com', 'http://localhost:3000']
 _allowed_origins = [o.strip() for o in os.environ.get('ALLOWED_ORIGINS', '').split(',') if o.strip()]
-CORS(app, origins=_allowed_origins or '*')
+CORS(app, origins=_allowed_origins or _default_origins)
 
 UPLOAD_FOLDER = 'temp_uploads'
 OUTPUT_FOLDER = 'outputs'
