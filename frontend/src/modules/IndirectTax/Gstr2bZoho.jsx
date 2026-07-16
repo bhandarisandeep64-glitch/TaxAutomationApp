@@ -12,6 +12,7 @@ import {
   Briefcase
 } from 'lucide-react';
 import { THEME } from '../../constants/theme';
+import { apiFetch } from '../../api/client';
 
 export default function Gstr2bZoho() {
   const [file, setFile] = useState(null);
@@ -46,7 +47,7 @@ export default function Gstr2bZoho() {
     formData.append('custom_name', reportName);
 
     try {
-      const response = await fetch('https://taxautomationapp.onrender.com/api/indirect-tax/gstr2b-zoho', {
+      const response = await apiFetch('/api/indirect-tax/gstr2b-zoho', {
         method: 'POST',
         body: formData,
       });
@@ -55,7 +56,9 @@ export default function Gstr2bZoho() {
       if (response.ok) {
         setStatus('success');
         setMessage(data.message);
-        setDownloadUrl(`https://taxautomationapp.onrender.com${data.download_url}`);
+        const fileRes = await apiFetch(data.download_url);
+        const blob = await fileRes.blob();
+        setDownloadUrl(window.URL.createObjectURL(blob));
         setFinalFileName(data.filename || 'GSTR2B_Zoho_Processed.xlsx');
         setSummaryData(data.summary_data || []);
       } else {

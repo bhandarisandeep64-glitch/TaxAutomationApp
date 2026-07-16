@@ -10,6 +10,7 @@ import {
   Plus
 } from 'lucide-react';
 import { THEME } from '../../constants/theme';
+import { apiFetch } from '../../api/client';
 
 export default function TdsZoho() {
   const [files, setFiles] = useState([]);
@@ -48,7 +49,7 @@ export default function TdsZoho() {
     formData.append('custom_name', reportName);
 
     try {
-      const response = await fetch('https://taxautomationapp.onrender.com/api/direct-tax/tds-zoho', {
+      const response = await apiFetch('/api/direct-tax/tds-zoho', {
         method: 'POST',
         body: formData,
       });
@@ -57,7 +58,9 @@ export default function TdsZoho() {
       if (response.ok) {
         setStatus('success');
         setMessage(data.message);
-        setDownloadUrl(`https://taxautomationapp.onrender.com${data.download_url}`);
+        const fileRes = await apiFetch(data.download_url);
+        const blob = await fileRes.blob();
+        setDownloadUrl(window.URL.createObjectURL(blob));
         setFinalFileName(data.filename || 'Report.xlsx'); // Capture filename
         setSummaryData(data.summary_data || []);
       } else {

@@ -3,6 +3,7 @@ import {
   Upload, CreditCard, CheckCircle, AlertCircle, Download, Flower, Calendar, FileSpreadsheet, X, Plus, Type
 } from 'lucide-react';
 import { THEME } from '../../constants/theme';
+import { apiFetch } from '../../api/client';
 
 export default function TdsChallan() {
   const [step, setStep] = useState(1); // 1: Upload, 2: Fill, 3: Done
@@ -38,7 +39,7 @@ export default function TdsChallan() {
     formData.append('file', file);
 
     try {
-      const res = await fetch('https://taxautomationapp.onrender.com/api/direct-tax/challan/analyze', {
+      const res = await apiFetch('/api/direct-tax/challan/analyze', {
         method: 'POST',
         body: formData
       });
@@ -62,9 +63,8 @@ export default function TdsChallan() {
   const handleUpdate = async () => {
     setStatus('processing');
     try {
-      const res = await fetch('https://taxautomationapp.onrender.com/api/direct-tax/challan/update', {
+      const res = await apiFetch('/api/direct-tax/challan/update', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           file_path: filePath,
           inputs: inputs,
@@ -74,7 +74,9 @@ export default function TdsChallan() {
       const data = await res.json();
 
       if (res.ok) {
-        setDownloadUrl(`https://taxautomationapp.onrender.com${data.download_url}`);
+        const fileRes = await apiFetch(data.download_url);
+        const blob = await fileRes.blob();
+        setDownloadUrl(window.URL.createObjectURL(blob));
         setStep(3);
         setStatus('success');
       } else {

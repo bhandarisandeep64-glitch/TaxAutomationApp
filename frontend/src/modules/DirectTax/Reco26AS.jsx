@@ -11,6 +11,7 @@ import {
   FileJson
 } from 'lucide-react';
 import { THEME } from '../../constants/theme';
+import { apiFetch } from '../../api/client';
 
 // --- LOCAL SETUP ---
 // Uncomment this line in your VS Code to use the real image
@@ -50,7 +51,7 @@ export default function Reco26AS() {
     formData.append('custom_name', reportName);
 
     try {
-      const response = await fetch('https://taxautomationapp.onrender.com/api/direct-tax/26as-reco', {
+      const response = await apiFetch('/api/direct-tax/26as-reco', {
         method: 'POST',
         body: formData,
       });
@@ -59,7 +60,9 @@ export default function Reco26AS() {
       if (response.ok) {
         setStatus('success');
         setMessage(data.message);
-        setDownloadUrl(`https://taxautomationapp.onrender.com${data.download_url}`);
+        const fileRes = await apiFetch(data.download_url);
+        const blob = await fileRes.blob();
+        setDownloadUrl(window.URL.createObjectURL(blob));
         setFinalFileName(data.filename || '26AS_Converted.xlsx');
         setSummaryData(data.summary_data || []);
       } else {

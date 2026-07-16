@@ -3,6 +3,7 @@ import {
   Users, Shield, AlertTriangle, CheckCircle, Search, Lock, Unlock, Plus, X, Save, RefreshCw, Activity, Trash2
 } from 'lucide-react';
 import { THEME } from '../constants/theme';
+import { apiJson } from '../api/client';
 
 export default function AdminDashboard({ currentUser }) {
   const [stats, setStats] = useState({ teamMembers: 0, restrictedAccounts: 0, systemStatus: 'Optimal' });
@@ -13,94 +14,64 @@ export default function AdminDashboard({ currentUser }) {
   
   const fetchAllData = () => {
     setLoading(true);
-    fetch('https://taxautomationapp.onrender.com/api/auth/users')
-      .then(res => res.json())
+    apiJson('/api/auth/users')
       .then(userData => {
         const safeUserData = Array.isArray(userData) ? userData : [];
         const employeeData = safeUserData.filter(u => u.role !== 'admin');
         setUsers(employeeData);
-        
-        setStats({ 
-            teamMembers: employeeData.length, 
-            restrictedAccounts: employeeData.filter(u => u.status === 'Restricted').length, 
-            systemStatus: 'Online' 
+
+        setStats({
+            teamMembers: employeeData.length,
+            restrictedAccounts: employeeData.filter(u => u.status === 'Restricted').length,
+            systemStatus: 'Online'
         });
         setLoading(false);
-      });
+      })
+      .catch(() => setLoading(false));
   };
 
   useEffect(() => { fetchAllData(); }, []);
 
-  const saveUsersToBackend = (updatedUsers) => {
-    // First get fresh master list, then merge updates
-    fetch('https://taxautomationapp.onrender.com/api/auth/users')
-    .then(res => res.json())
-    .then(allUsers => {
-        const masterList = allUsers.map(serverUser => {
-            const localMatch = updatedUsers.find(u => u.id === serverUser.id);
-            return localMatch || serverUser;
-        });
-        // Add new if missing
-        updatedUsers.forEach(localUser => {
-            if (!masterList.find(u => u.id === localUser.id)) masterList.push(localUser);
-        });
-
-        fetch('https://taxautomationapp.onrender.com/api/auth/users', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(masterList)
-        }).then(() => fetchAllData());
-    });
-  };
-
   // --- PERMISSION TOGGLE ---
   const toggleModuleAccess = (userId, moduleKey) => {
-      const updated = users.map(u => {
-          if (u.id !== userId) return u;
-          const currentRestricted = u.restrictedModules || [];
-          let newRestricted;
-          
-          if (currentRestricted.includes(moduleKey)) {
-              // Un-restrict (Remove from list)
-              newRestricted = currentRestricted.filter(m => m !== moduleKey);
-          } else {
-              // Restrict (Add to list)
-              newRestricted = [...currentRestricted, moduleKey];
-          }
-          return { ...u, restrictedModules: newRestricted };
-      });
-      setUsers(updated);
-      saveUsersToBackend(updated);
+      const target = users.find(u => u.id === userId);
+      if (!target) return;
+      const currentRestricted = target.restrictedModules || [];
+      const newRestricted = currentRestricted.includes(moduleKey)
+          ? currentRestricted.filter(m => m !== moduleKey) // Un-restrict
+          : [...currentRestricted, moduleKey]; // Restrict
+
+      apiJson(`/api/auth/users/${userId}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ restrictedModules: newRestricted })
+      }).then(fetchAllData);
   };
 
   const toggleUserStatus = (id) => {
-    const updated = users.map(u => u.id === id ? { ...u, status: u.status === 'Active' ? 'Restricted' : 'Active' } : u);
-    setUsers(updated);
-    saveUsersToBackend(updated);
+    const target = users.find(u => u.id === id);
+    if (!target) return;
+    apiJson(`/api/auth/users/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status: target.status === 'Active' ? 'Restricted' : 'Active' })
+    }).then(fetchAllData);
   };
 
   const deleteUser = (id) => {
       if (window.confirm("Remove user?")) {
-          setUsers(prev => prev.filter(u => u.id !== id));
-          fetch('https://taxautomationapp.onrender.com/api/auth/users')
-            .then(res => res.json())
-            .then(allUsers => {
-                const remaining = allUsers.filter(u => u.id !== id);
-                fetch('https://taxautomationapp.onrender.com/api/auth/users', {
-                    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(remaining)
-                }).then(() => fetchAllData());
-            });
+          apiJson(`/api/auth/users/${id}`, { method: 'DELETE' }).then(fetchAllData);
       }
   };
 
   const handleAddUser = () => {
     if (!newUser.username || !newUser.password) return;
-    const id = Date.now(); 
-    const updated = [...users, { ...newUser, id }];
-    setUsers(updated);
-    saveUsersToBackend(updated);
-    setIsAddingUser(false);
-    setNewUser({ username: '', password: '', name: '', role: 'user', status: 'Active', restrictedModules: [] });
+    apiJson('/api/auth/users', {
+        method: 'POST',
+        body: JSON.stringify(newUser)
+    }).then(() => {
+        fetchAllData();
+        setIsAddingUser(false);
+        setNewUser({ username: '', password: '', name: '', role: 'user', status: 'Active', restrictedModules: [] });
+    }).catch(err => alert(err.message || 'Failed to create user'));
   };
 
   const toggleNewUserPermission = (mod) => {

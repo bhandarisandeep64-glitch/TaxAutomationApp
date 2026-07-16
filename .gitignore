@@ -7,6 +7,8 @@ env/
 backend/temp_uploads/
 backend/outputs/
 backend/compliance_data.json
+backend/users_data.json
+backend/chat_data.json
 
 # --- React / Frontend ---
 frontend/node_modules/

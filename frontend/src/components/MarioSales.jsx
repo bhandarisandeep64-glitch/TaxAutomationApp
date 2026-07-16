@@ -9,6 +9,7 @@ import {
   TrendingUp
 } from 'lucide-react';
 import { THEME } from '../constants/theme'; // Adjust path if your theme is located elsewhere
+import { apiFetch } from '../api/client';
 
 export default function MarioSales() {
   // 1. Specific states for our 6 files
@@ -69,8 +70,7 @@ export default function MarioSales() {
     }
 
     try {
-      // NOTE: Update the URL if your backend is hosted differently
-      const response = await fetch('https://taxautomationapp.onrender.com/api/mario/sales', {
+      const response = await apiFetch('/api/mario/sales', {
         method: 'POST',
         body: formData,
       });

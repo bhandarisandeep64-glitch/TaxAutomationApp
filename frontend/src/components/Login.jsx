@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { User, Lock, Flower, Send, CheckCircle, ArrowLeft, AlertCircle, ShieldCheck, Fingerprint } from 'lucide-react';
+import { apiFetch, setToken } from '../api/client';
 
 export default function Login({ onLogin }) {
   // --- STATE ---
@@ -47,16 +48,16 @@ export default function Login({ onLogin }) {
     // await new Promise(r => setTimeout(r, 800)); 
 
     try {
-      const response = await fetch('https://taxautomationapp.onrender.com/api/auth/login', {
+      const response = await apiFetch('/api/auth/login', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData),
       });
 
       const data = await response.json();
 
       if (response.ok) {
-        onLogin(data.user); 
+        setToken(data.token);
+        onLogin(data.user);
       } else {
         setError(data.error || 'Invalid credentials');
         if (data.error && data.error.includes("Restricted")) {
@@ -64,15 +65,7 @@ export default function Login({ onLogin }) {
         }
       }
     } catch (err) {
-        // Fallback for demo/offline testing
-        if(formData.username === 'demo') {
-             setTimeout(() => { 
-                 setLoading(false); 
-                 onLogin({ username: 'demo', role: 'admin' }); // Mock success
-             }, 1000)
-        } else {
-             setError('Server connection failed');
-        }
+        setError('Server connection failed');
     } finally {
       setLoading(false);
     }

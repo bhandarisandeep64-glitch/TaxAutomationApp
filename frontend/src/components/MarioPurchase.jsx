@@ -9,6 +9,7 @@ import {
   ShoppingCart
 } from 'lucide-react';
 import { THEME } from '../constants/theme';
+import { apiFetch } from '../api/client';
 
 export default function MarioPurchase() {
   // 1. Specific states for our 6 Purchase files
@@ -65,8 +66,7 @@ export default function MarioPurchase() {
     }
 
     try {
-      // Pointing to your live Render backend for Purchases
-      const response = await fetch('https://taxautomationapp.onrender.com/api/mario/purchase', {
+      const response = await apiFetch('/api/mario/purchase', {
         method: 'POST',
         body: formData,
       });

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, CheckCircle, Send, User, MessageSquare, ThumbsUp, ThumbsDown, ShieldAlert } from 'lucide-react';
 import { THEME } from '../constants/theme';
+import { apiFetch } from '../api/client';
 
 export default function ChatWidget({ user, onClose }) {
   const [msg, setMsg] = useState('');
@@ -8,7 +9,7 @@ export default function ChatWidget({ user, onClose }) {
   const [loading, setLoading] = useState(false);
 
   const fetchMessages = () => {
-    fetch('https://taxautomationapp.onrender.com/api/chat')
+    apiFetch('/api/chat')
         .then(res => res.json())
         .then(data => {
             // Filter logic:
@@ -41,9 +42,8 @@ export default function ChatWidget({ user, onClose }) {
     const newMsg = { id: Date.now(), username: user.name, content: msg, timestamp: 'Just now', type: 'general' };
     setMessages([newMsg, ...messages]);
     
-    await fetch('https://taxautomationapp.onrender.com/api/chat', {
+    await apiFetch('/api/chat', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username: user.username, content: msg }) // Use username for consistency
     });
     setMsg('');
@@ -53,10 +53,9 @@ export default function ChatWidget({ user, onClose }) {
   // Admin Action Handler
   const handleAction = async (targetUsername, action, messageId) => {
       try {
-          await fetch('https://taxautomationapp.onrender.com/api/chat/handle-request', {
+          await apiFetch('/api/chat/handle-request', {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ 
+              body: JSON.stringify({
                   username: targetUsername, 
                   action: action,
                   message_id: messageId

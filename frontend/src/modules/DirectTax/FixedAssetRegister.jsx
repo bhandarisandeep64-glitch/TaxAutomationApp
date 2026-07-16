@@ -12,6 +12,7 @@ import {
   Flower
 } from 'lucide-react';
 import { THEME } from '../../constants/theme';
+import { apiFetch } from '../../api/client';
 
 export default function FixedAssetRegister() {
   const [file, setFile] = useState(null);
@@ -89,7 +90,7 @@ export default function FixedAssetRegister() {
     formData.append('file_assets', file);
 
     try {
-      const response = await fetch('https://taxautomationapp.onrender.com/api/fixed-assets/calculate', {
+      const response = await apiFetch('/api/fixed-assets/calculate', {
         method: 'POST',
         body: formData,
       });

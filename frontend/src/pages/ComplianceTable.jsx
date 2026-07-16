@@ -3,6 +3,7 @@ import {
   CheckCircle, AlertCircle, MinusCircle, Plus, Trash2, Search, Calendar, Save, RefreshCw
 } from 'lucide-react';
 import { THEME } from '../constants/theme';
+import { apiFetch } from '../api/client';
 
 export default function ComplianceTable({ user }) { // Receive user prop
   const [clients, setClients] = useState([]);
@@ -20,7 +21,7 @@ export default function ComplianceTable({ user }) { // Receive user prop
     
     setLoading(true);
     // Pass user_id in query params
-    fetch(`https://taxautomationapp.onrender.com/api/compliance?user_id=${user.id}`)
+    apiFetch(`/api/compliance?user_id=${user.id}`)
       .then(res => res.json())
       .then(data => {
         setClients(data);
@@ -34,11 +35,10 @@ export default function ComplianceTable({ user }) { // Receive user prop
     setSaveStatus('saving');
     setClients(updatedClients);
     
-    fetch('https://taxautomationapp.onrender.com/api/compliance', {
+    apiFetch('/api/compliance', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       // Send user_id in body
-      body: JSON.stringify({ 
+      body: JSON.stringify({
           user_id: user.id,
           clients: updatedClients 
       })

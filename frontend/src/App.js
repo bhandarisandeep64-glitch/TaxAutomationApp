@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { MessageSquare, Menu, Send, X, Shield, Flower } from 'lucide-react'; // Added Flower
 import { THEME } from './constants/theme';
+import { apiFetch, setToken, getToken } from './api/client';
 
 // --- COMPONENT IMPORTS ---
 import Login from './components/Login';
@@ -29,7 +30,8 @@ export default function App() {
   // Initialize user state from LocalStorage if it exists
 const [user, setUser] = useState(() => {
   const savedUser = localStorage.getItem('currentUser');
-  return savedUser ? JSON.parse(savedUser) : null;
+  // A saved user with no token means a prior session expired -- treat as logged out.
+  return savedUser && getToken() ? JSON.parse(savedUser) : null;
 });
   const [currentModule, setCurrentModule] = useState('admin_dashboard');
   const [showChat, setShowChat] = useState(false);
@@ -62,9 +64,8 @@ const [user, setUser] = useState(() => {
   const sendAccessRequest = async () => {
       if (!requestReason) return;
       try {
-          await fetch('https://taxautomationapp.onrender.com/api/chat', {
+          await apiFetch('/api/chat', {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
                   username: user.username,
                   content: `Requesting access to ${requestedModule}. Reason: ${requestReason}`,
@@ -156,8 +157,9 @@ const [user, setUser] = useState(() => {
     onLogout={() => {
         // CLEAR STORAGE HERE
         localStorage.removeItem('currentUser');
+        setToken(null);
         setUser(null);
-    }} 
+    }}
     currentModule={currentModule} 
     mobileMenuOpen={mobileMenuOpen} 
 />

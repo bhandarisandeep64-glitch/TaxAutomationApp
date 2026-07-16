@@ -6,6 +6,7 @@ import {
   Server, ArrowRight, Disc, MessageSquare, Sparkles, Brain, 
   Send as SendIcon, Loader, Bot, Settings, Key, Lock
 } from 'lucide-react';
+import { apiFetch } from '../../api/client';
 
 export default function RecoGSTR2BZoho() {
   // --- PRESERVED STATE ---
@@ -224,7 +225,7 @@ export default function RecoGSTR2BZoho() {
     });
 
     try {
-      const response = await fetch('https://taxautomationapp.onrender.com/api/indirect-tax/reco-gstr2b-zoho', {
+      const response = await apiFetch('/api/indirect-tax/reco-gstr2b-zoho', {
         method: 'POST',
         body: formData,
       });

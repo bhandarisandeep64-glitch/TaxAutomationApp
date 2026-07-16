@@ -11,6 +11,7 @@ import {
   Plus
 } from 'lucide-react';
 import { THEME } from '../../constants/theme';
+import { apiFetch } from '../../api/client';
 
 export default function TdsOdoo() {
   const [files, setFiles] = useState([]);
@@ -47,7 +48,7 @@ export default function TdsOdoo() {
     formData.append('custom_name', reportName);
 
     try {
-      const response = await fetch('https://taxautomationapp.onrender.com/api/direct-tax/tds-odoo', {
+      const response = await apiFetch('/api/direct-tax/tds-odoo', {
         method: 'POST',
         body: formData,
       });
@@ -56,7 +57,9 @@ export default function TdsOdoo() {
       if (response.ok) {
         setStatus('success');
         setMessage(data.message);
-        setDownloadUrl(`https://taxautomationapp.onrender.com${data.download_url}`);
+        const fileRes = await apiFetch(data.download_url);
+        const blob = await fileRes.blob();
+        setDownloadUrl(window.URL.createObjectURL(blob));
         setSummaryData(data.summary_data || []);
       } else {
         setStatus('error');

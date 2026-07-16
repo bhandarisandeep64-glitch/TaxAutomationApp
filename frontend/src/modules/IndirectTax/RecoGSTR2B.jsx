@@ -13,6 +13,7 @@ import {
   Flower
 } from 'lucide-react';
 import { THEME } from '../../constants/theme';
+import { apiFetch } from '../../api/client';
 
 export default function RecoGSTR2B() {
   // State for files
@@ -102,7 +103,7 @@ export default function RecoGSTR2B() {
     });
 
     try {
-      const response = await fetch('https://taxautomationapp.onrender.com/api/indirect-tax/reco-gstr2b', {
+      const response = await apiFetch('/api/indirect-tax/reco-gstr2b', {
         method: 'POST',
         body: formData,
       });
