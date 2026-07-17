@@ -39,7 +39,7 @@ def _build_portal_file():
         ['27BBBBB0000B1Z5', 'Test Vendor B', '0002-25', '10-12-2025', 23600, 'Maharashtra', 'No', 18, 20000.00, 3600.00, 0, 0, 0],
         # C1: previous-period, no books match at all -> "Previous Period Inv"
         ['27CCCCC0000C1Z5', 'Test Vendor C', 'OLD-001', '15-10-2025', 11800, 'Maharashtra', 'No', 18, 10000.00, 1800.00, 0, 0, 0],
-        # C2: previous-period, WITH a books match -> "Match (Old Inv)"
+        # C2: previous-period, WITH a books match -> "Previous Month Input"
         ['27DDDDD0000D1Z5', 'Test Vendor D', 'OLD-002', '20-10-2025', 5900, 'Maharashtra', 'No', 18, 5000.00, 900.00, 0, 0, 0],
         # D: time-barred (FY 2022-23 invoice, Section 16(4) deadline was 30-Nov-2023)
         ['27EEEEE0000E1Z5', 'Test Vendor E', 'TB-001', '10-05-2022', 5900, 'Maharashtra', 'No', 18, 5000.00, 900.00, 0, 0, 0],
@@ -121,7 +121,7 @@ def test_gstr2b_reco_engine():
 
     # C2: previous-period invoice WITH a books match
     c2 = _get_row(b2b_portal, 'OLD-002')
-    assert c2['Remarks'] == 'Match (Old Inv)', f"Test C2 failed: got {c2['Remarks']!r}"
+    assert c2['Remarks'] == 'Previous Month Input', f"Test C2 failed: got {c2['Remarks']!r}"
 
     # D: Section 16(4) time-barred flag
     d = _get_row(b2b_portal, 'TB-001')

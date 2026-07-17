@@ -126,6 +126,89 @@ def process_file_core(df, filename, invoice_type, tax_type):
         print(f"Error inside core logic: {e}")
         return pd.DataFrame()
 
+def compute_gstr1_data(file_paths):
+    """Reads and processes the raw Odoo ledger exports, returning
+    (final_df, summary) with no file I/O -- used both by process_gstr1_odoo
+    (the standalone GSTR-1 tool) and by gstr3b_engine.py, which needs the
+    detail rows and category summary directly rather than re-parsing a
+    generated Excel file."""
+    processed_dfs = []
+
+    for fp in file_paths:
+        try:
+            if fp.endswith('.csv'):
+                df = pd.read_csv(fp)
+            else:
+                df = pd.read_excel(fp)
+
+            filename = os.path.basename(fp).lower()
+            inv_type, tax = detect_file_type(df, filename)
+
+            print(f"Processing {filename}: Detected {inv_type} | {tax}")
+
+            df_processed = process_file_core(df, filename, inv_type, tax)
+            if not df_processed.empty:
+                processed_dfs.append(df_processed)
+
+        except Exception as e:
+            print(f"Failed to process file {fp}: {str(e)}")
+            continue
+
+    if not processed_dfs:
+        return None, None
+
+    # 2. Merge
+    merged_df = pd.concat(processed_dfs, ignore_index=True)
+
+    # 3. Calculate Lines
+    merged_df['Line_Total'] = (
+        merged_df['Taxable Amt.'].fillna(0) +
+        merged_df['IGST'].fillna(0) +
+        merged_df['CGST'].fillna(0) +
+        merged_df['SGST'].fillna(0)
+    )
+
+    # Invoice Totals
+    if 'Number' in merged_df.columns:
+        inv_totals = merged_df.groupby('Number')['Line_Total'].sum().reset_index()
+        inv_totals.rename(columns={'Line_Total': 'Invoice Total'}, inplace=True)
+        if 'Invoice Total' in merged_df.columns: del merged_df['Invoice Total']
+        merged_df = pd.merge(merged_df, inv_totals, on='Number', how='left')
+
+    # 4. Prepare Final Data
+    final_cols = [
+        'Nature', 'Partner', 'GSTIN', 'PAN No.', 'Date', 'Number',
+        'Reference', 'Label', 'Invoice Total', 'Taxable Amt.', 'IGST', 'CGST', 'SGST'
+    ]
+    existing_cols = [c for c in final_cols if c in merged_df.columns]
+    final_df = merged_df[existing_cols].copy()
+
+    # 5. Create Summary
+    summary = merged_df.groupby('Nature').agg(
+        Taxable=('Taxable Amt.', 'sum'),
+        IGST=('IGST', 'sum'),
+        CGST=('CGST', 'sum'),
+        SGST=('SGST', 'sum')
+    ).reset_index()
+    summary.rename(columns={'Nature': 'Category'}, inplace=True)
+
+    # Add Grand Total Row to Summary
+    total_row = pd.DataFrame([{
+        'Category': 'GRAND TOTAL',
+        'Taxable': summary['Taxable'].sum(),
+        'IGST': summary['IGST'].sum(),
+        'CGST': summary['CGST'].sum(),
+        'SGST': summary['SGST'].sum()
+    }])
+    summary = pd.concat([summary, total_row], ignore_index=True)
+
+    # Rounding
+    for col in ['Taxable', 'IGST', 'CGST', 'SGST']:
+        summary[col] = summary[col].round(2)
+
+    return final_df, summary
+
+
 def process_gstr1_odoo(file_paths, output_folder, custom_filename=None):
     """
     Main Wrapper:
@@ -134,79 +217,9 @@ def process_gstr1_odoo(file_paths, output_folder, custom_filename=None):
     3. Generates formatted Excel with Subtotals and AutoFilter.
     """
     try:
-        processed_dfs = []
-        
-        for fp in file_paths:
-            try:
-                if fp.endswith('.csv'):
-                    df = pd.read_csv(fp)
-                else:
-                    df = pd.read_excel(fp)
-                
-                filename = os.path.basename(fp).lower()
-                inv_type, tax = detect_file_type(df, filename)
-                
-                print(f"Processing {filename}: Detected {inv_type} | {tax}")
-                
-                df_processed = process_file_core(df, filename, inv_type, tax)
-                if not df_processed.empty:
-                    processed_dfs.append(df_processed)
-                    
-            except Exception as e:
-                print(f"Failed to process file {fp}: {str(e)}")
-                continue
-
-        if not processed_dfs:
+        final_df, summary = compute_gstr1_data(file_paths)
+        if final_df is None:
             return {"success": False, "error": "Could not process any valid data."}
-
-        # 2. Merge
-        merged_df = pd.concat(processed_dfs, ignore_index=True)
-
-        # 3. Calculate Lines
-        merged_df['Line_Total'] = (
-            merged_df['Taxable Amt.'].fillna(0) + 
-            merged_df['IGST'].fillna(0) + 
-            merged_df['CGST'].fillna(0) + 
-            merged_df['SGST'].fillna(0)
-        )
-        
-        # Invoice Totals
-        if 'Number' in merged_df.columns:
-            inv_totals = merged_df.groupby('Number')['Line_Total'].sum().reset_index()
-            inv_totals.rename(columns={'Line_Total': 'Invoice Total'}, inplace=True)
-            if 'Invoice Total' in merged_df.columns: del merged_df['Invoice Total']
-            merged_df = pd.merge(merged_df, inv_totals, on='Number', how='left')
-
-        # 4. Prepare Final Data
-        final_cols = [
-            'Nature', 'Partner', 'GSTIN', 'PAN No.', 'Date', 'Number', 
-            'Reference', 'Label', 'Invoice Total', 'Taxable Amt.', 'IGST', 'CGST', 'SGST'
-        ]
-        existing_cols = [c for c in final_cols if c in merged_df.columns]
-        final_df = merged_df[existing_cols].copy()
-
-        # 5. Create Summary
-        summary = merged_df.groupby('Nature').agg(
-            Taxable=('Taxable Amt.', 'sum'),
-            IGST=('IGST', 'sum'),
-            CGST=('CGST', 'sum'),
-            SGST=('SGST', 'sum')
-        ).reset_index()
-        summary.rename(columns={'Nature': 'Category'}, inplace=True)
-        
-        # Add Grand Total Row to Summary
-        total_row = pd.DataFrame([{
-            'Category': 'GRAND TOTAL',
-            'Taxable': summary['Taxable'].sum(),
-            'IGST': summary['IGST'].sum(),
-            'CGST': summary['CGST'].sum(),
-            'SGST': summary['SGST'].sum()
-        }])
-        summary = pd.concat([summary, total_row], ignore_index=True)
-
-        # Rounding
-        for col in ['Taxable', 'IGST', 'CGST', 'SGST']:
-            summary[col] = summary[col].round(2)
 
         # --- 6. EXCEL GENERATION WITH SUBTOTALS & FILTERS ---
         if custom_filename and str(custom_filename).strip():

@@ -130,12 +130,18 @@ def clean_portal_df(df_raw, sheet_name):
         'Invoice Date': 'Invoice date', 'Place of supply': 'Place Of Supply',
         'Supply Attract Reverse Charge': 'Reverse Charge', 'Rate (%)': 'Rate'
     }
+    # Compares with whitespace collapsed out entirely, not just trimmed at the
+    # ends -- real portal exports are inconsistent about whether there's a
+    # space before "(₹)" (e.g. "Integrated Tax(₹)" vs "Integrated Tax (₹)"),
+    # and a strict compare silently failed to rename the column at all when
+    # the spacing didn't match the hardcoded key exactly.
+    def _norm(s):
+        return re.sub(r'\s+', '', str(s).lower())
+
+    rename_map_norm = {_norm(k): v for k, v in rename_map.items()}
     final_cols = []
     for col in df_data.columns:
-        mapped = col
-        for k, v in rename_map.items():
-            if k.lower() == str(col).lower().strip(): mapped = v; break
-        final_cols.append(mapped)
+        final_cols.append(rename_map_norm.get(_norm(col), col))
     
     # === CORRECTION: Rename FIRST, then drop duplicates ===
     df_data.columns = final_cols
@@ -425,9 +431,13 @@ def apply_reco_logic(df, lookup_maps, target_col_name, is_portal_sheet, reco_mon
         inv_dt = row.get(col_date) if col_date in row else None
         has_date = isinstance(inv_dt, pd.Timestamp) and pd.notnull(inv_dt)
 
-        # 3. Previous-period check (portal side only, requires a reco month)
+        # 3. Previous-period check (portal side only, requires a reco month).
+        # A matched invoice dated before the reco month is relabeled
+        # "Previous Month Input" -- this exact remark is what feeds the
+        # GSTR-3B engine's "previous month reflecting in this month claimed"
+        # bucket (see gstr3b_engine.py), so it's not just cosmetic.
         if is_portal_sheet and reco_month_dt is not None and has_date and inv_dt < reco_month_dt:
-            remark = (remark + " (Old Inv)") if "Match" in remark else "Previous Period Inv"
+            remark = "Previous Month Input" if "Match" in remark else "Previous Period Inv"
 
         # 4. Section 16(4) time-barred ITC check (portal side only)
         if is_portal_sheet and has_date:
@@ -497,7 +507,53 @@ def get_smart_sorted_order(portal_dict, books_dict):
     return final_order
 
 # ==========================================
-#  SECTION 6: VENDOR SUMMARY
+#  SECTION 6: ITC AVAILABILITY MERGE
+# ==========================================
+
+# Every invoice inside one of these reference sheets gets tagged with the
+# label below, based purely on which sheet it came from -- the GSTR-2B
+# portal export puts them in ITC-eligibility-specific sheets rather than a
+# single "ITC Availability" column inside each transaction sheet, so the
+# sheet name itself *is* the category.
+ITC_AVAILABILITY_LABELS = {
+    "ITC Available": "Yes",
+    "ITC not available": "No",
+    "ITC Reversal": "Reversal",
+    "ITC Rejected": "Rejected",
+}
+
+def apply_itc_availability(processed_portal, reference_sheets):
+    """Adds an 'ITC Availability' column to every portal sheet, looked up
+    from the ITC-eligibility reference sheets by (GSTIN, normalized invoice
+    number). Blank if an invoice isn't listed in any reference sheet (e.g.
+    no reference sheets were present in this particular portal export)."""
+    availability_map = {}
+    for sheet_name, df in reference_sheets.items():
+        label = ITC_AVAILABILITY_LABELS.get(sheet_name.strip())
+        if not label or 'GSTIN' not in df.columns or 'Invoice Number' not in df.columns:
+            continue
+        for _, row in df.iterrows():
+            key = (str(row['GSTIN']).strip().upper(), clean_inv_str(row['Invoice Number']))
+            if key[1]:
+                availability_map[key] = label
+
+    if not availability_map:
+        for df in processed_portal.values():
+            df['ITC Availability'] = ''
+        return processed_portal
+
+    for df in processed_portal.values():
+        if 'GSTIN' not in df.columns or 'Invoice Number' not in df.columns:
+            df['ITC Availability'] = ''
+            continue
+        df['ITC Availability'] = [
+            availability_map.get((str(g).strip().upper(), clean_inv_str(inv)), '')
+            for g, inv in zip(df['GSTIN'], df['Invoice Number'])
+        ]
+    return processed_portal
+
+# ==========================================
+#  SECTION 7: VENDOR SUMMARY
 # ==========================================
 
 def generate_vendor_summary(processed_portal):
@@ -525,72 +581,89 @@ def generate_vendor_summary(processed_portal):
     return grouped.reindex(grouped['Total_Difference'].abs().sort_values(ascending=False).index)
 
 # ==========================================
-#  SECTION 7: MAIN ENTRY POINT
+#  SECTION 8: COMPUTE (shared by the standalone reco report and by
+#  gstr3b_engine.py, which needs the reconciled DataFrames directly rather
+#  than a finished Excel file to re-parse)
 # ==========================================
 
-def generate_reco_report(file_portal, odoo_files_dict, month_str=None):
-    output = BytesIO()
+def compute_reco_data(file_portal, odoo_files_dict, month_str=None):
+    """Runs the full portal-vs-Odoo reconciliation and returns
+    (processed_portal, processed_books, reference_sheets) as DataFrames --
+    no Excel writing. `processed_portal` sheets already have the
+    'ITC Availability' column merged in from the reference sheets."""
     reco_dt = None
-
     if month_str:
         try:
             reco_dt = pd.to_datetime(month_str + "-01")
         except (ValueError, TypeError) as e:
             logger.warning(f"Could not parse reconciliation month '{month_str}': {e}")
 
+    # 1. Portal Processing -- split into sheets to reconcile vs. ITC
+    # reference-only sheets (see ITC_REFERENCE_SHEETS above)
+    xls_p = pd.ExcelFile(file_portal)
+    raw_portal = filter_portal_sheets(xls_p)
+    clean_portal_dict = {}
+    reference_sheets = {}
+    rcm_frames = []
+    for sheet, df_raw in raw_portal.items():
+        df = clean_portal_df(df_raw, sheet)
+        if df.empty: continue
+        if sheet.strip() in ITC_REFERENCE_SHEETS:
+            reference_sheets[sheet] = df
+            continue
+        if 'Reverse Charge' in df.columns:
+            is_rcm = df['Reverse Charge'].astype(str).str.strip().str.lower().isin(['yes', 'y'])
+            if is_rcm.any():
+                rcm_data = df[is_rcm].copy(); rcm_data['Source'] = sheet
+                rcm_frames.append(rcm_data); df = df[~is_rcm]
+        clean_portal_dict[sheet] = df
+    if rcm_frames: clean_portal_dict['RCM Combined'] = pd.concat(rcm_frames, ignore_index=True)
+
+    # 2. Odoo Processing
+    clean_odoo_dict = process_odoo_logic_4files(odoo_files_dict)
+
+    # 3. Indexing
+    books_maps_tuple = generate_lookup_map(clean_odoo_dict)
+    portal_maps_tuple = generate_lookup_map(clean_portal_dict)
+
+    # 4. Apply Logic (Portal Sheets)
+    processed_portal = {}
+    for sheet_name, df in clean_portal_dict.items():
+        df_final = apply_reco_logic(df, books_maps_tuple, 'As per Books', True, reco_dt)
+        processed_portal[sheet_name] = df_final
+
+    # 5. Apply Logic (Books Sheets)
+    processed_books = {}
+    for sheet_name, df in clean_odoo_dict.items():
+        df_final = apply_reco_logic(df, portal_maps_tuple, 'As per Portal', False, None)
+        processed_books[sheet_name] = df_final
+
+    # 6. ITC Availability merge (portal sheets only)
+    processed_portal = apply_itc_availability(processed_portal, reference_sheets)
+
+    return processed_portal, processed_books, reference_sheets
+
+# ==========================================
+#  SECTION 9: MAIN ENTRY POINT
+# ==========================================
+
+def generate_reco_report(file_portal, odoo_files_dict, month_str=None):
+    output = BytesIO()
+    processed_portal, processed_books, reference_sheets = compute_reco_data(file_portal, odoo_files_dict, month_str)
+
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
 
-        # 1. Portal Processing -- split into sheets to reconcile vs. ITC
-        # reference-only sheets (see ITC_REFERENCE_SHEETS above)
-        xls_p = pd.ExcelFile(file_portal)
-        raw_portal = filter_portal_sheets(xls_p)
-        clean_portal_dict = {}
-        reference_sheets = {}
-        rcm_frames = []
-        for sheet, df_raw in raw_portal.items():
-            df = clean_portal_df(df_raw, sheet)
-            if df.empty: continue
-            if sheet.strip() in ITC_REFERENCE_SHEETS:
-                reference_sheets[sheet] = df
-                continue
-            if 'Reverse Charge' in df.columns:
-                is_rcm = df['Reverse Charge'].astype(str).str.strip().str.lower().isin(['yes', 'y'])
-                if is_rcm.any():
-                    rcm_data = df[is_rcm].copy(); rcm_data['Source'] = sheet
-                    rcm_frames.append(rcm_data); df = df[~is_rcm]
-            clean_portal_dict[sheet] = df
-        if rcm_frames: clean_portal_dict['RCM Combined'] = pd.concat(rcm_frames, ignore_index=True)
-
-        # 2. Odoo Processing
-        clean_odoo_dict = process_odoo_logic_4files(odoo_files_dict)
-
-        # 3. Indexing
-        books_maps_tuple = generate_lookup_map(clean_odoo_dict)
-        portal_maps_tuple = generate_lookup_map(clean_portal_dict)
-
-        # 4. Apply Logic (Portal Sheets)
-        processed_portal = {}
-        for sheet_name, df in clean_portal_dict.items():
-            df_final = apply_reco_logic(df, books_maps_tuple, 'As per Books', True, reco_dt)
-            processed_portal[sheet_name] = df_final
-
-        # 5. Apply Logic (Books Sheets)
-        processed_books = {}
-        for sheet_name, df in clean_odoo_dict.items():
-            df_final = apply_reco_logic(df, portal_maps_tuple, 'As per Portal', False, None)
-            processed_books[sheet_name] = df_final
-
-        # 6. Vendor Summary (written first so it's the first tab a reviewer sees)
+        # Vendor Summary (written first so it's the first tab a reviewer sees)
         vendor_summary = generate_vendor_summary(processed_portal)
         if not vendor_summary.empty:
             add_formatting_and_subtotals(writer, vendor_summary, "Vendor Summary")
 
-        # 7. Smart Sorting & Writing (main reconciliation sheets)
+        # Smart Sorting & Writing (main reconciliation sheets)
         sorted_sheets = get_smart_sorted_order(processed_portal, processed_books)
         for sheet_title, df_final in sorted_sheets:
             add_formatting_and_subtotals(writer, df_final, sheet_title)
 
-        # 8. ITC reference sheets (not reconciled, shown as-is for cross-check)
+        # ITC reference sheets (not reconciled, shown as-is for cross-check)
         for sheet_name, df in reference_sheets.items():
             title = f"{sheet_name} (Reference)"[:31]
             add_formatting_and_subtotals(writer, df, title)

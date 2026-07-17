@@ -37,6 +37,7 @@ from modules.indirect_tax.gstr2b_zoho import process_gstr2b_zoho
 from modules.indirect_tax.gstr1_zoho import process_gstr1_zoho
 from modules.indirect_tax.gstr2b_reco_engine import generate_reco_report
 from modules.indirect_tax.gstr2b_reco_zoho_engine import generate_reco_report_zoho
+from modules.indirect_tax.gstr3b_engine import generate_gstr3b_report
 
 # --- 5. MARIO IMPORTS ---
 from modules.mario.sales import generate_mario_sales_report
@@ -442,6 +443,70 @@ def reco_gstr2b_zoho_route():
     except Exception as e:
         print(f"Zoho Reco Error: {e}")
         return jsonify({'error': str(e)}), 500
+
+# --- GSTR-3B WORKING PAPER (ODOO) ---
+@app.route('/api/indirect-tax/gstr3b-odoo', methods=['POST'])
+@require_auth
+def run_gstr3b_odoo():
+    saved_gstr1_paths = []
+    try:
+        client_name = (request.form.get('client_name') or '').strip()
+        period = (request.form.get('period') or '').strip()
+        if not client_name:
+            return jsonify({'error': 'Client name is required.'}), 400
+        if not period:
+            return jsonify({'error': 'Period (month) is required.'}), 400
+
+        if 'file_portal' not in request.files:
+            return jsonify({'error': 'GSTR-2B portal file is required.'}), 400
+        file_portal = request.files['file_portal']
+
+        odoo_files = {
+            'odoo_reg_cgst': request.files.get('odoo_reg_cgst'),
+            'odoo_reg_igst': request.files.get('odoo_reg_igst'),
+            'odoo_rcm_cgst': request.files.get('odoo_rcm_cgst'),
+            'odoo_rcm_igst': request.files.get('odoo_rcm_igst'),
+        }
+
+        for file in request.files.getlist('gstr1_files'):
+            if file and file.filename != '':
+                filename = secure_filename(file.filename)
+                fp = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+                file.save(fp)
+                saved_gstr1_paths.append(fp)
+        if not saved_gstr1_paths:
+            return jsonify({'error': 'At least one GSTR-1 Odoo ledger file is required.'}), 400
+
+        opening_itc_override = None
+        if any(request.form.get(k) not in (None, '') for k in ('opening_igst', 'opening_cgst', 'opening_sgst')):
+            def get_float(key):
+                val = request.form.get(key)
+                return float(val) if val not in (None, '') else 0.0
+            opening_itc_override = {
+                'igst': get_float('opening_igst'),
+                'cgst': get_float('opening_cgst'),
+                'sgst': get_float('opening_sgst'),
+            }
+
+        excel_file = generate_gstr3b_report(
+            saved_gstr1_paths, file_portal, odoo_files,
+            str(g.current_user['id']), client_name, period, opening_itc_override
+        )
+
+        return send_file(
+            excel_file,
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            download_name=f'{client_name} GSTR3B {period}.xlsx',
+            as_attachment=True
+        )
+
+    except Exception as e:
+        print(f"GSTR-3B Error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+    finally:
+        for fp in saved_gstr1_paths:
+            if os.path.exists(fp): os.remove(fp)
 
 # ==========================================
 #  MARIO CUSTOM ROUTES

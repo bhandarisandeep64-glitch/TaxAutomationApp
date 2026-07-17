@@ -52,3 +52,18 @@ class ComplianceRecord(db.Model):
 
     user_id = db.Column(db.String(50), primary_key=True)
     clients = db.Column(db.JSON, nullable=False, default=list)
+
+
+class GstrPeriodBalance(db.Model):
+    """Closing ITC balance for a client at the end of a given period, read
+    back as next period's opening ITC so it doesn't need re-entering by
+    hand every month."""
+    __tablename__ = 'gstr_period_balances'
+
+    owner_user_id = db.Column(db.String(50), primary_key=True)
+    client_name = db.Column(db.String(120), primary_key=True)
+    period = db.Column(db.String(7), primary_key=True)  # 'YYYY-MM'
+
+    closing_itc_igst = db.Column(db.Float, nullable=False, default=0.0)
+    closing_itc_cgst = db.Column(db.Float, nullable=False, default=0.0)
+    closing_itc_sgst = db.Column(db.Float, nullable=False, default=0.0)
