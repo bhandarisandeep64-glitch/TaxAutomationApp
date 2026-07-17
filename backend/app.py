@@ -429,7 +429,8 @@ def reco_gstr2b_zoho_route():
             }
         }
 
-        excel_file = generate_reco_report_zoho(file_portal, file_zoho, manual_inputs)
+        month_str = request.form.get('month')  # e.g. "2025-12", used to flag prior-period invoices
+        excel_file = generate_reco_report_zoho(file_portal, file_zoho, manual_inputs, month_str)
 
         return send_file(
             excel_file,

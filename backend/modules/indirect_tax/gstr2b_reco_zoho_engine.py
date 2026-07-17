@@ -10,9 +10,14 @@ from xlsxwriter.utility import xl_col_to_name, xl_rowcol_to_cell
 #  CONFIGURATION & SETTINGS
 # ==========================================
 
-PORTAL_SHEETS_TO_IGNORE = [
-    "Read me", "ITC Available", "ITC not available", "ITC Reversal", "ITC Rejected"
-]
+PORTAL_SHEETS_TO_IGNORE = ["Read me"]
+
+# These carry ITC-eligibility info rather than a distinct set of transactions.
+# Kept and shown in the output workbook for reference, but deliberately NOT
+# merged into the reconciliation match logic -- their rows likely overlap
+# with invoices already listed in B2B/ECO/etc, and reconciling them too
+# would double-count those invoices.
+ITC_REFERENCE_SHEETS = {"ITC Available", "ITC not available", "ITC Reversal", "ITC Rejected"}
 
 ZOHO_SHEETS_TO_IGNORE = [
     'imp', 'imp_services', 'nil,exempt,non-gst,composition', 
@@ -42,8 +47,19 @@ def robust_safe_float(val):
     try:
         val_str = str(val).replace(',', '').strip()
         return float(val_str)
-    except:
+    except (ValueError, TypeError):
         return 0.0
+
+def get_itc_deadline(invoice_date):
+    """Section 16(4): ITC on an invoice must be claimed by 30th November
+    following the end of the financial year (Apr-Mar) it belongs to. Returns
+    None if invoice_date isn't a usable date. This is the statutory ceiling,
+    not the earlier "date of filing the annual return" cutoff (that filing
+    date isn't available here), so it's a conservative/latest bound."""
+    if pd.isna(invoice_date): return None
+    year, month = invoice_date.year, invoice_date.month
+    fy_end_year = year + 1 if month >= 4 else year
+    return pd.Timestamp(year=fy_end_year, month=11, day=30)
 
 def clean_gstin(val):
     if pd.isna(val): return ""
@@ -55,7 +71,7 @@ def clean_date_robust(val):
     try:
         if isinstance(val, pd.Timestamp): return val.normalize()
         return pd.to_datetime(val, dayfirst=True, errors='coerce').normalize()
-    except:
+    except (ValueError, TypeError):
         return None
 
 def get_similarity_score(a, b):
@@ -177,8 +193,9 @@ def _extract_header_dynamically(df_raw):
 def clean_portal_data(file_content):
     xls = pd.ExcelFile(file_content)
     cleaned_sheets = {}
+    reference_sheets = {}
     rcm_frames = []
-    
+
     conditional_delete = {
         "B2B": 7, "B2B-CDNR": 7, "ECO": 7, "ISD": 7, "IMPG": 7, "IMPGSEZ": 7,
         "B2B (ITC Reversal)": 7, "B2B-DNR": 7, "B2BA": 8, "B2B-CDNRA": 8
@@ -190,7 +207,7 @@ def clean_portal_data(file_content):
 
         try:
             df_raw = pd.read_excel(xls, sheet_name=sheet, header=None)
-            
+
             # Empty Check
             if sheet_clean in conditional_delete:
                 target_idx = conditional_delete[sheet_clean] - 1
@@ -198,6 +215,10 @@ def clean_portal_data(file_content):
 
             df = _extract_header_dynamically(df_raw)
             if df.empty: continue
+
+            if sheet_clean in ITC_REFERENCE_SHEETS:
+                reference_sheets[sheet] = df
+                continue
 
             # Separate RCM
             if 'Reverse Charge' in df.columns:
@@ -213,11 +234,11 @@ def clean_portal_data(file_content):
         except Exception as e:
             logging.error(f"Error processing Portal sheet {sheet}: {e}")
             continue
-    
+
     if rcm_frames:
         cleaned_sheets['RCM Combined'] = pd.concat(rcm_frames, ignore_index=True)
 
-    return cleaned_sheets
+    return cleaned_sheets, reference_sheets
 
 def clean_zoho_data(file_content):
     xls = pd.ExcelFile(file_content)
@@ -253,8 +274,9 @@ def clean_zoho_data(file_content):
                     df = df.iloc[:last_idx + 1]
 
             sheet_map[sheet_lower] = {'original_name': sheet_name, 'df': df}
-            
-        except Exception:
+
+        except Exception as e:
+            logging.warning(f"Error processing Zoho sheet '{sheet_name}': {e}")
             continue
 
     # Remove RCM invoices from B2B if they exist in both
@@ -312,7 +334,9 @@ def reconcile_dataframe(df, candidates, target_col_name, is_portal_sheet, reco_m
     df[target_col_name] = 0.0
     df['Difference'] = 0.0
     df['Remarks'] = ''
-    df['__matched__'] = False 
+    df['__matched__'] = False
+    if is_portal_sheet:
+        df['ITC Time-Barred'] = ''
     
     col_inv = 'Invoice Number'
     col_tax = 'Taxable Value'
@@ -374,7 +398,26 @@ def reconcile_dataframe(df, candidates, target_col_name, is_portal_sheet, reco_m
                 if not cand['used']:
                     write_match(idx, r, cand, "Match")
                     break
-    
+
+    # Pass 1.5: same invoice number + GSTIN, but the amount doesn't match.
+    # Every other pass below requires the amount to already be close before
+    # it'll even look at the invoice number -- which means a genuine value
+    # discrepancy on an otherwise clearly-identified invoice (wrong amount
+    # entered on one side) was falling all the way through to "cleanup" and
+    # showing up as two disconnected "missing" entries instead of one clear
+    # "Mismatch". Invoice number + GSTIN identity is reliable enough that it
+    # should win regardless of amount, same as the Odoo reco engine already
+    # does.
+    for idx, row in df.iterrows():
+        if df.at[idx, '__matched__']: continue
+        r = get_row_data(row)
+        if not r['inv']: continue
+        for cand in candidates:
+            if cand['used'] or cand['clean_inv'] != r['inv']: continue
+            if r['gstin'] and cand['gstin'] and r['gstin'] != cand['gstin']: continue
+            write_match(idx, r, cand, "Mismatch")
+            break
+
     for idx, row in df.iterrows():
         if df.at[idx, '__matched__']: continue
         r = get_row_data(row)
@@ -448,13 +491,22 @@ def reconcile_dataframe(df, candidates, target_col_name, is_portal_sheet, reco_m
                 curr_date = clean_date_robust(row[col_date])
                 if pd.notnull(curr_date) and curr_date < reco_month_dt: remark = "Previous Period Inv"
             df.at[idx, 'Remarks'] = remark
-    
+
+        # Section 16(4) time-barred ITC check (portal side only)
+        if is_portal_sheet and col_date:
+            inv_dt = clean_date_robust(row[col_date])
+            if pd.notnull(inv_dt):
+                deadline = get_itc_deadline(inv_dt)
+                if deadline is not None and pd.Timestamp.now().normalize() > deadline:
+                    df.at[idx, 'ITC Time-Barred'] = f"YES (was due {deadline.strftime('%d-%b-%Y')})"
+
     df.drop(columns=['__matched__'], inplace=True, errors='ignore')
     cess_cols = [c for c in df.columns if 'cess' in c.lower()]
     for c_col in cess_cols:
         try:
             if pd.to_numeric(df[c_col], errors='coerce').fillna(0).sum() == 0: df.drop(columns=[c_col], inplace=True)
-        except: pass
+        except (ValueError, TypeError):
+            pass
     return df
 
 # ==========================================
@@ -724,38 +776,54 @@ def generate_vendor_summary(writer, portal_dict, books_dict):
 def generate_discrepancy_sheets(writer, portal_dict, books_dict):
     not_in_books = []
     prev_period = []
-    
+    mismatches = []
+
     for sheet_name, df in portal_dict.items():
         if 'Remarks' not in df.columns: continue
-        
+
         nib_df = df[df['Remarks'].str.contains("Not in Books", case=False, na=False)].copy()
         if not nib_df.empty:
             nib_df.insert(0, 'Source Sheet', sheet_name)
             not_in_books.append(nib_df)
-            
+
         prev_df = df[df['Remarks'].str.contains("Previous", case=False, na=False)].copy()
         if not prev_df.empty:
             prev_df.insert(0, 'Source Sheet', sheet_name)
             prev_period.append(prev_df)
 
+        # "Mismatch" is a substring of "Mismatch (Rate Diff)" too, so this
+        # picks up both flavors -- genuinely the same invoice on both sides,
+        # different amount or different tax split.
+        mis_df = df[df['Remarks'].str.contains("Mismatch", case=False, na=False)].copy()
+        if not mis_df.empty:
+            mis_df.insert(0, 'Source Sheet', sheet_name)
+            mismatches.append(mis_df)
+
     not_on_portal = []
     for sheet_name, data in books_dict.items():
         df = data['df']
         if 'Remarks' not in df.columns: continue
-        
+
         nop_df = df[df['Remarks'].str.contains("Not on Portal", case=False, na=False)].copy()
         if not nop_df.empty:
             nop_df.insert(0, 'Source Sheet', sheet_name)
             not_on_portal.append(nop_df)
 
+    # Mismatches is the highest-priority sheet for a reviewer (a real
+    # discrepancy that needs correcting, not just something missing), so
+    # it's written first among the discrepancy tabs.
+    if mismatches:
+        final_mis = pd.concat(mismatches, ignore_index=True)
+        add_formatting(writer, final_mis, "Mismatches")
+
     if not_in_books:
         final_nib = pd.concat(not_in_books, ignore_index=True)
         add_formatting(writer, final_nib, "Not in Books")
-        
+
     if not_on_portal:
         final_nop = pd.concat(not_on_portal, ignore_index=True)
         add_formatting(writer, final_nop, "Not on Portal")
-        
+
     if prev_period:
         final_prev = pd.concat(prev_period, ignore_index=True)
         add_formatting(writer, final_prev, "Previous Period Input")
@@ -784,19 +852,27 @@ def get_smart_sorted_order(portal_dict, books_dict):
 #  MAIN ENTRY POINT (CALLED BY APP.PY)
 # ==========================================
 
-def generate_reco_report_zoho(file_portal, file_zoho, manual_inputs=None):
+def generate_reco_report_zoho(file_portal, file_zoho, manual_inputs=None, month_str=None):
     """
     Main function called by app.py.
     Returns: BytesIO object (Excel file)
     """
     output = BytesIO()
 
-    # Default date for "Previous Period" check if not passed
-    reco_dt = None 
+    # NOTE: this used to be hardcoded to None, which meant "Previous Period"
+    # detection could never fire even though the frontend already sends a
+    # reconciliation month -- app.py just wasn't reading it. Now parsed
+    # properly, same as the Odoo reco engine.
+    reco_dt = None
+    if month_str:
+        try:
+            reco_dt = pd.to_datetime(month_str + "-01")
+        except (ValueError, TypeError) as e:
+            logging.warning(f"Could not parse reconciliation month '{month_str}': {e}")
 
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
         # 1. Clean Data
-        portal_data = clean_portal_data(file_portal)
+        portal_data, reference_sheets = clean_portal_data(file_portal)
         zoho_data = clean_zoho_data(file_zoho)
 
         # 2. Generate Maps
@@ -808,7 +884,7 @@ def generate_reco_report_zoho(file_portal, file_zoho, manual_inputs=None):
         for sheet, df in portal_data.items():
             df_res = reconcile_dataframe(df, books_maps, 'As per Books', True, reco_dt)
             processed_portal_dfs[sheet] = df_res
-        
+
         # 4. Process Books Data
         for key, data in zoho_data.items():
             data['df'] = reconcile_dataframe(data['df'], portal_maps, 'As per Portal', False)
@@ -822,6 +898,11 @@ def generate_reco_report_zoho(file_portal, file_zoho, manual_inputs=None):
         sorted_sheets = get_smart_sorted_order(processed_portal_dfs, zoho_data)
         for sheet_name, df in sorted_sheets:
             add_formatting(writer, df, sheet_name)
+
+        # 7. ITC reference sheets (not reconciled, shown as-is for cross-check)
+        for sheet_name, df in reference_sheets.items():
+            title = f"{sheet_name} (Reference)"[:31]
+            add_formatting(writer, df, title)
 
     output.seek(0)
     return output
