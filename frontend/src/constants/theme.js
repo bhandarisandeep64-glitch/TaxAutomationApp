@@ -1,30 +1,62 @@
+// Corporate-premium design system.
+// One consistent accent (champagne gold) drives every interactive element
+// across the whole app. The "Black Rose" wine tone is reserved for the brand
+// mark only (logo, login) so identity persists without bleeding into every
+// button, badge, and focus ring like it used to.
+
 export const THEME = {
-    // Main Backgrounds - Deep Black/Zinc
-    bg: "bg-[#050505]", 
-    card: "bg-zinc-900/50 backdrop-blur-md border border-rose-900/20",
-    
-    // Sidebar specific
-    sidebar: "bg-black/80 border-r border-rose-900/20 backdrop-blur-xl",
-    
-    // Text Colors
-    textMain: "text-zinc-100",
-    textSecondary: "text-zinc-400",
-    textHighlight: "text-rose-500",
-    
-    // Borders
-    border: "border-rose-900/20",
-    
-    // Accent Colors (Buttons, Icons, Highlights)
-    accent: "text-rose-600",
-    accentBg: "bg-rose-600",
-    accentHover: "hover:bg-rose-700",
-    
-    // Status Colors (for tables/badges)
-    success: "text-emerald-400",
-    error: "text-red-400",
-    warning: "text-amber-400",
-    
-    // Button Styles (Reusable classes)
-    buttonPrimary: "bg-gradient-to-r from-rose-900 to-rose-700 hover:from-rose-800 hover:to-rose-600 text-white shadow-lg shadow-rose-900/20 transition-all",
-    buttonSecondary: "bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700"
+  // Backgrounds
+  bg: "bg-neutral-950",
+  bgSubtle: "bg-neutral-900",
+  card: "bg-neutral-900/60 backdrop-blur-sm border border-white/[0.06]",
+  cardSolid: "bg-neutral-900 border border-white/[0.06]",
+  surfaceElevated: "bg-neutral-800/50 border border-white/[0.08]",
+  surfaceSunken: "bg-black/40 border border-white/[0.06]",
+
+  sidebar: "bg-neutral-950/95 border-r border-white/[0.06] backdrop-blur-xl",
+
+  // Text
+  textMain: "text-neutral-100",
+  textSecondary: "text-neutral-400",
+  textMuted: "text-neutral-500",
+  textHighlight: "text-amber-400",
+
+  // Borders
+  border: "border-white/[0.06]",
+  borderHover: "hover:border-white/[0.12]",
+  borderAccent: "border-amber-500/30",
+
+  // Brand mark only -- logo, login screen. Never used for buttons/nav/status.
+  brand: "text-rose-800",
+  brandSoft: "text-rose-900/70",
+  brandGlow: "shadow-[0_0_24px_rgba(120,40,60,0.25)]",
+
+  // Accent -- the one interactive signal used everywhere (buttons, active
+  // nav, focus rings, highlighted totals)
+  accent: "text-amber-400",
+  accentBg: "bg-amber-500",
+  accentBorder: "border-amber-500/40",
+  accentHover: "hover:bg-amber-400",
+  accentSoft: "bg-amber-500/10",
+  accentRing: "focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500/60",
+
+  // Status colors (tables, badges, results)
+  success: "text-emerald-400",
+  successBg: "bg-emerald-500/10 border-emerald-500/30",
+  error: "text-red-400",
+  errorBg: "bg-red-500/10 border-red-500/30",
+  warning: "text-amber-400",
+  warningBg: "bg-amber-500/10 border-amber-500/30",
+  info: "text-sky-400",
+  infoBg: "bg-sky-500/10 border-sky-500/30",
+  neutralBg: "bg-neutral-700/20 border-neutral-700/40",
+
+  // Buttons
+  buttonPrimary: "bg-amber-500 hover:bg-amber-400 text-neutral-950 font-semibold shadow-lg shadow-amber-500/10 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-amber-500",
+  buttonSecondary: "bg-neutral-800 hover:bg-neutral-700 text-neutral-200 border border-white/[0.08] transition-colors",
+  buttonGhost: "hover:bg-white/[0.04] text-neutral-400 hover:text-neutral-100 transition-colors",
+  buttonDanger: "bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 transition-colors",
+
+  // Inputs
+  input: "bg-black/30 border border-white/[0.08] text-neutral-100 placeholder-neutral-600 focus:outline-none focus:border-amber-500/60 focus:ring-2 focus:ring-amber-500/20 transition-colors",
 };

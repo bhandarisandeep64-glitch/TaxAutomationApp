@@ -1,22 +1,23 @@
 import React, { useState } from 'react';
-import { 
-  Upload, FileSpreadsheet, CheckCircle, AlertCircle, Download, Type, Flower, X 
-} from 'lucide-react';
-import { THEME } from '../../constants/theme';
+import { CheckCircle, Download, Type, Zap, FileSpreadsheet } from 'lucide-react';
 import { apiFetch } from '../../api/client';
+import { PageHeader, Card, Button, UploadSlot } from '../../components/ui';
 
-// Uncomment next line in your local environment
-// import blackRose from '../../assets/black-rose.png'; 
+const SLOTS = [
+  { key: 'file_invoice_details', title: '1. Invoice Details' },
+  { key: 'file_credit_note_details', title: '2. Credit Note Details' },
+  { key: 'file_invoice_credit_notes', title: '3. Inv/CN Headers' },
+  { key: 'file_export_invoices', title: '4. Export Invoices' },
+];
 
 export default function Gstr1Zoho() {
-  // The exact keys expected by Python
   const [files, setFiles] = useState({
     file_invoice_details: null,
     file_credit_note_details: null,
     file_invoice_credit_notes: null,
     file_export_invoices: null
   });
-  
+
   const [reportName, setReportName] = useState('');
   const [status, setStatus] = useState('idle');
   const [message, setMessage] = useState('');
@@ -40,21 +41,17 @@ export default function Gstr1Zoho() {
   };
 
   const handleRunAutomation = async () => {
-    // Must have at least one header file
     if (!files.file_invoice_credit_notes && !files.file_export_invoices) {
-        setMessage("Please upload at least one Header file (Slot 3 or 4).");
-        setStatus('error');
-        return;
+      setMessage("Please upload at least one Header file (Slot 3 or 4).");
+      setStatus('error');
+      return;
     }
 
     setStatus('processing');
     const formData = new FormData();
-    
-    // Append files with correct keys
     Object.keys(files).forEach(key => {
       if (files[key]) formData.append(key, files[key]);
     });
-    
     formData.append('custom_name', reportName);
 
     try {
@@ -78,93 +75,60 @@ export default function Gstr1Zoho() {
       }
     } catch (error) {
       setStatus('error');
-      setMessage('Failed to connect to Python Backend.');
+      setMessage('Failed to connect to the backend.');
     }
   };
 
-  const UploadSlot = ({ title, slotKey, color }) => (
-    <div className={`relative border-2 border-dashed ${files[slotKey] ? 'border-green-500/50 bg-green-900/10' : 'border-slate-700 bg-slate-900/30'} rounded-xl p-4 flex flex-col justify-center items-center text-center h-32 transition-all hover:border-${color}-500/50 group`}>
-        <input type="file" id={`upload-${slotKey}`} className="hidden" accept=".xlsx, .csv" onChange={handleFileChange(slotKey)} />
-        
-        {files[slotKey] ? (
-            <div className="w-full relative">
-                <button onClick={() => removeFile(slotKey)} className="absolute -top-2 -right-2 text-slate-500 hover:text-red-400"><X className="w-4 h-4"/></button>
-                <FileSpreadsheet className="w-8 h-8 text-green-500 mx-auto mb-2" />
-                <p className="text-xs text-green-400 font-medium truncate px-2">{files[slotKey].name}</p>
-            </div>
-        ) : (
-            <label htmlFor={`upload-${slotKey}`} className="cursor-pointer w-full h-full flex flex-col items-center justify-center">
-                <Upload className={`w-6 h-6 text-slate-500 group-hover:text-${color}-400 mb-2`} />
-                <span className="text-xs font-bold text-slate-300 uppercase tracking-wide">{title}</span>
-                <span className="text-[10px] text-slate-500 mt-1">Click to Add</span>
-            </label>
-        )}
-    </div>
-  );
-
   return (
     <div className="max-w-6xl mx-auto space-y-6 animate-in fade-in duration-500 pt-4">
-      
-      <div className={`p-6 rounded-2xl border ${THEME.border} bg-slate-900/50 shadow-xl`}>
-        {/* Name Input */}
+      <PageHeader icon={FileSpreadsheet} eyebrow="Indirect Tax" title="GSTR-1 Processing" subtitle="Zoho" />
+
+      <Card>
         <div className="mb-6 max-w-md">
-            <div className="flex items-center gap-3 px-4 py-3 rounded-xl border border-slate-700 bg-slate-950 focus-within:border-amber-500 transition-colors">
-                <Type className="w-4 h-4 text-slate-500" />
-                <input type="text" placeholder="Report Name (e.g. Nov 2025 Sales)" value={reportName} onChange={(e) => setReportName(e.target.value)}
-                    className="bg-transparent border-none outline-none text-white w-full placeholder-slate-600 text-sm font-medium" />
-            </div>
+          <div className="flex items-center gap-3 px-4 py-3 rounded-xl border border-white/[0.08] bg-black/30 focus-within:border-amber-500/60 focus-within:ring-2 focus-within:ring-amber-500/20 transition-colors">
+            <Type className="w-4 h-4 text-neutral-600" />
+            <input type="text" placeholder="Report Name (e.g. Nov 2025 Sales)" value={reportName} onChange={(e) => setReportName(e.target.value)}
+              className="bg-transparent border-none outline-none text-neutral-100 w-full placeholder-neutral-600 text-sm font-medium" />
+          </div>
         </div>
 
         <div className="flex flex-col lg:flex-row gap-8 items-center">
-            {/* 4 Slots */}
-            <div className="flex-1 w-full grid grid-cols-2 gap-4">
-                <UploadSlot title="1. Invoice Details" slotKey="file_invoice_details" color="blue" />
-                <UploadSlot title="2. Credit Note Details" slotKey="file_credit_note_details" color="indigo" />
-                <UploadSlot title="3. Inv/CN Headers" slotKey="file_invoice_credit_notes" color="purple" />
-                <UploadSlot title="4. Export Invoices" slotKey="file_export_invoices" color="pink" />
-            </div>
+          <div className="flex-1 w-full grid grid-cols-2 gap-4">
+            {SLOTS.map(s => (
+              <UploadSlot key={s.key} title={s.title} file={files[s.key]} onChange={handleFileChange(s.key)} onRemove={() => removeFile(s.key)} />
+            ))}
+          </div>
 
-            {/* Black Rose Button */}
-            <div className="relative flex-shrink-0 self-center pl-4">
-                 <div className={`absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-24 h-24 blur-2xl rounded-full pointer-events-none transition-all duration-500 ${status === 'processing' ? 'bg-rose-600/40' : 'bg-rose-900/20'}`}></div>
-                <button onClick={handleRunAutomation} disabled={status === 'processing'}
-                    className={`group relative w-24 h-24 rounded-full flex items-center justify-center transition-all duration-300 ${status === 'processing' ? 'bg-slate-950 border-2 border-rose-900 cursor-not-allowed' : 'bg-black border border-rose-900/50 shadow-[0_0_0_1px_rgba(225,29,72,0.2)] hover:shadow-[0_0_20px_rgba(225,29,72,0.4)] hover:scale-105 active:scale-95'}`}
-                    title="Process Files"
-                >
-                    {status === 'processing' ? (
-                        <div className="relative flex items-center justify-center">
-                            <span className="absolute inset-0 rounded-full border-2 border-t-rose-500 border-r-rose-500 border-b-transparent border-l-transparent animate-spin"></span>
-                            <Flower strokeWidth={1.5} className="w-10 h-10 text-rose-600 animate-spin-slow" />
-                        </div>
-                    ) : (
-                        <Flower strokeWidth={1} className="w-12 h-12 text-rose-800 transition-all duration-700 group-hover:text-rose-600 group-hover:rotate-180 group-hover:scale-110 animate-pulse-slow opacity-90 group-hover:opacity-100" />
-                    )}
-                </button>
-                {status === 'error' && <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 whitespace-nowrap text-red-400 text-[10px] bg-red-950/90 px-2 py-1 rounded border border-red-900">{message}</div>}
-            </div>
+          <div className="flex-shrink-0 self-center">
+            <Button icon={Zap} loading={status === 'processing'} onClick={handleRunAutomation}>
+              {status === 'processing' ? 'Processing' : 'Process Files'}
+            </Button>
+            {status === 'error' && <p className="text-red-400 text-xs mt-2 text-center max-w-[180px]">{message}</p>}
+          </div>
         </div>
-      </div>
+      </Card>
 
-      {/* Results */}
       {status === 'success' && (
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6 animate-in slide-in-from-bottom-4 duration-700">
-          <div className={`md:col-span-1 ${THEME.card} border ${THEME.border} p-6 rounded-xl flex flex-col items-center justify-center text-center relative overflow-hidden`}>
-             <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-purple-500 to-indigo-400"></div>
-             <CheckCircle className="w-10 h-10 text-purple-400 mb-3" />
-             <h3 className="text-lg font-bold text-white mb-1">Ready</h3>
-             <a href={downloadUrl} download={finalFileName} className="w-full mt-4 flex items-center justify-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white text-sm font-bold rounded-lg transition-all shadow-lg shadow-purple-900/20">
-                <Download className="w-4 h-4" /> Download Excel
-             </a>
-          </div>
-          <div className={`md:col-span-3 ${THEME.card} border ${THEME.border} p-0 rounded-xl overflow-hidden`}>
-             <div className="px-6 py-4 border-b border-slate-800 bg-slate-950/50"><h3 className="text-sm font-bold text-slate-300 uppercase tracking-wider">Sales Summary</h3></div>
-             <div className="overflow-x-auto">
-                <table className="w-full text-left text-sm"><thead className="bg-slate-950 text-slate-400 text-xs uppercase"><tr><th className="p-4 font-semibold">Category</th><th className="p-4 text-right font-semibold">Total Taxable</th><th className="p-4 text-right font-semibold">IGST</th><th className="p-4 text-right font-semibold">CGST</th><th className="p-4 text-right font-semibold">SGST</th></tr></thead>
-                  <tbody className="divide-y divide-slate-800">{summaryData.map((row, idx) => (
-                      <tr key={idx} className={`transition-colors hover:bg-slate-800/30`}><td className="p-4">{row.Category}</td><td className="p-4 text-right font-mono">₹{row.Taxable?.toLocaleString()}</td><td className="p-4 text-right font-mono">₹{row.IGST?.toLocaleString()}</td><td className="p-4 text-right font-mono">₹{row.CGST?.toLocaleString()}</td><td className="p-4 text-right font-mono">₹{row.SGST?.toLocaleString()}</td></tr>
-                    ))}</tbody></table>
-             </div>
-          </div>
+          <Card className="md:col-span-1 flex flex-col items-center justify-center text-center relative overflow-hidden">
+            <div className="absolute top-0 left-0 w-full h-1 bg-emerald-500" />
+            <CheckCircle className="w-10 h-10 text-emerald-400 mb-3" />
+            <h3 className="text-lg font-semibold text-neutral-50 mb-1">Ready</h3>
+            <a href={downloadUrl} download={finalFileName} className="w-full mt-4 flex items-center justify-center gap-2 px-4 py-2.5 bg-amber-500 hover:bg-amber-400 text-neutral-950 text-sm font-semibold rounded-xl transition-colors shadow-lg shadow-amber-500/10">
+              <Download className="w-4 h-4" /> Download Excel
+            </a>
+          </Card>
+          <Card className="md:col-span-3" padded={false}>
+            <div className="px-6 py-4 border-b border-white/[0.06]"><h3 className="text-xs font-semibold text-neutral-400 uppercase tracking-wider">Sales Summary</h3></div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm">
+                <thead className="bg-black/20 text-neutral-500 text-xs uppercase"><tr><th className="p-4 font-medium">Category</th><th className="p-4 text-right font-medium">Total Taxable</th><th className="p-4 text-right font-medium">IGST</th><th className="p-4 text-right font-medium">CGST</th><th className="p-4 text-right font-medium">SGST</th></tr></thead>
+                <tbody className="divide-y divide-white/[0.06]">{summaryData.map((row, idx) => (
+                  <tr key={idx} className="transition-colors hover:bg-white/[0.02] text-neutral-300"><td className="p-4">{row.Category}</td><td className="p-4 text-right font-mono">₹{row.Taxable?.toLocaleString()}</td><td className="p-4 text-right font-mono">₹{row.IGST?.toLocaleString()}</td><td className="p-4 text-right font-mono">₹{row.CGST?.toLocaleString()}</td><td className="p-4 text-right font-mono">₹{row.SGST?.toLocaleString()}</td></tr>
+                ))}</tbody>
+              </table>
+            </div>
+          </Card>
         </div>
       )}
     </div>

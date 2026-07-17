@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { 
+import {
   CheckCircle, AlertCircle, MinusCircle, Plus, Trash2, Search, Calendar, Save, RefreshCw
 } from 'lucide-react';
-import { THEME } from '../constants/theme';
 import { apiFetch } from '../api/client';
+import { PageHeader, Spinner, EmptyState } from '../components/ui';
 
-export default function ComplianceTable({ user }) { // Receive user prop
+export default function ComplianceTable({ user }) {
   const [clients, setClients] = useState([]);
   const [loading, setLoading] = useState(true);
   const [newClient, setNewClient] = useState("");
@@ -13,14 +13,9 @@ export default function ComplianceTable({ user }) { // Receive user prop
   const [isAdding, setIsAdding] = useState(false);
   const [saveStatus, setSaveStatus] = useState('saved');
 
-  // --- API CALLS ---
-  
-  // Load Data specific to this User
   useEffect(() => {
     if (!user) return;
-    
     setLoading(true);
-    // Pass user_id in query params
     apiFetch(`/api/compliance?user_id=${user.id}`)
       .then(res => res.json())
       .then(data => {
@@ -28,28 +23,24 @@ export default function ComplianceTable({ user }) { // Receive user prop
         setLoading(false);
       })
       .catch(err => console.error("Failed to load data", err));
-  }, [user]); // Re-run if user changes
+  }, [user]);
 
-  // Save Data specific to this User
   const saveData = (updatedClients) => {
     setSaveStatus('saving');
     setClients(updatedClients);
-    
+
     apiFetch('/api/compliance', {
       method: 'POST',
-      // Send user_id in body
       body: JSON.stringify({
-          user_id: user.id,
-          clients: updatedClients 
+        user_id: user.id,
+        clients: updatedClients
       })
     })
-    .then(res => res.json())
-    .then(() => setTimeout(() => setSaveStatus('saved'), 500))
-    .catch(() => setSaveStatus('error'));
+      .then(res => res.json())
+      .then(() => setTimeout(() => setSaveStatus('saved'), 500))
+      .catch(() => setSaveStatus('error'));
   };
 
-  // --- HELPERS ---
-  
   const toggleStatus = (id, field) => {
     const updatedClients = clients.map(c => {
       if (c.id !== id) return c;
@@ -79,15 +70,15 @@ export default function ComplianceTable({ user }) { // Receive user prop
     }
   };
 
-  const filteredClients = clients.filter(c => 
+  const filteredClients = clients.filter(c =>
     c.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   const StatusBadge = ({ status, onClick }) => {
     const styles = {
-      done: "bg-green-500/10 text-green-500 border-green-500/30 hover:bg-green-500/20",
-      pending: "bg-red-500/10 text-red-500 border-red-500/30 hover:bg-red-500/20",
-      na: "bg-slate-700/30 text-slate-500 border-slate-700 hover:bg-slate-700/50"
+      done: "bg-emerald-500/10 text-emerald-400 border-emerald-500/25 hover:bg-emerald-500/20",
+      pending: "bg-red-500/10 text-red-400 border-red-500/25 hover:bg-red-500/20",
+      na: "bg-neutral-800/60 text-neutral-500 border-white/[0.06] hover:bg-neutral-800"
     };
     const icons = {
       done: <CheckCircle className="w-3 h-3" />,
@@ -97,94 +88,88 @@ export default function ComplianceTable({ user }) { // Receive user prop
     const labels = { done: "DONE", pending: "PENDING", na: "N/A" };
 
     return (
-      <button onClick={onClick} className={`flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs font-bold tracking-wider transition-all w-28 justify-center ${styles[status]}`}>
+      <button onClick={onClick} className={`flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs font-semibold tracking-wider transition-colors w-28 justify-center ${styles[status]}`}>
         {icons[status]} {labels[status]}
       </button>
     );
   };
 
-  if (loading) return <div className="flex justify-center items-center h-64 text-slate-500"><RefreshCw className="w-6 h-6 animate-spin mr-2"/> Loading Tracker...</div>;
+  if (loading) return <div className="flex justify-center items-center h-64 text-neutral-500 gap-2"><Spinner /> Loading tracker…</div>;
 
   return (
     <div className="max-w-7xl mx-auto space-y-8 animate-in fade-in duration-500">
-      {/* Header */}
-      <div className="flex flex-col md:flex-row justify-between items-end border-b border-slate-800 pb-6 gap-4">
-        <div className="flex items-center gap-4">
-            <div className={`p-3 rounded-xl bg-gradient-to-br from-slate-800 to-black border border-slate-700 shadow-lg`}>
-                <Calendar className={`w-8 h-8 ${THEME.accent}`} />
-            </div>
-            <div>
-                <h2 className="text-3xl font-bold text-white tracking-tight">Compliance Tracker</h2>
-                <p className="text-slate-400 mt-1">Monthly Deadlines & Client Status</p>
-            </div>
-        </div>
-        <div className="flex items-center gap-3 w-full md:w-auto">
+      <PageHeader
+        icon={Calendar}
+        eyebrow="Compliance"
+        title="Compliance Tracker"
+        subtitle="Monthly deadlines & client status"
+        action={
+          <div className="flex items-center gap-3 w-full md:w-auto">
             <div className="relative flex-1 md:w-64">
-                <Search className="w-4 h-4 text-slate-500 absolute left-3 top-3" />
-                <input type="text" placeholder="Search Clients..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)}
-                    className="w-full bg-slate-900 border border-slate-700 rounded-xl pl-10 pr-4 py-2.5 text-sm text-white focus:border-amber-500 outline-none transition-all" />
+              <Search className="w-4 h-4 text-neutral-600 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input type="text" placeholder="Search clients…" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full bg-black/30 border border-white/[0.08] rounded-xl pl-9 pr-4 py-2.5 text-sm text-neutral-100 placeholder-neutral-600 focus:outline-none focus:border-amber-500/60 focus:ring-2 focus:ring-amber-500/20 transition-colors" />
             </div>
-            <button onClick={() => setIsAdding(true)} className="bg-amber-600 hover:bg-amber-500 text-slate-900 p-2.5 rounded-xl transition-colors shadow-lg shadow-amber-900/20">
-                <Plus className="w-5 h-5" />
+            <button onClick={() => setIsAdding(true)} className="bg-amber-500 hover:bg-amber-400 text-neutral-950 p-2.5 rounded-xl transition-colors shadow-lg shadow-amber-500/10 shrink-0">
+              <Plus className="w-5 h-5" />
             </button>
-        </div>
-      </div>
-
-      {/* Add Client Input */}
-      {isAdding && (
-          <div className="bg-slate-900/50 border border-amber-500/30 p-4 rounded-xl flex gap-4 animate-in slide-in-from-top-2">
-              <input type="text" placeholder="Enter Client Name" autoFocus value={newClient} onChange={(e) => setNewClient(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && addClient()}
-                  className="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-4 py-2 text-white focus:border-amber-500 outline-none" />
-              <button onClick={addClient} className="px-6 py-2 bg-green-600 hover:bg-green-500 text-white font-bold rounded-lg text-sm">Save</button>
-              <button onClick={() => setIsAdding(false)} className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-lg text-sm">Cancel</button>
           </div>
+        }
+      />
+
+      {isAdding && (
+        <div className="bg-neutral-900/60 border border-amber-500/30 p-4 rounded-2xl flex gap-4 animate-in slide-in-from-top-2">
+          <input type="text" placeholder="Enter client name" autoFocus value={newClient} onChange={(e) => setNewClient(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && addClient()}
+            className="flex-1 bg-black/30 border border-white/[0.08] rounded-lg px-4 py-2 text-sm text-neutral-100 placeholder-neutral-600 focus:outline-none focus:border-amber-500/60 focus:ring-2 focus:ring-amber-500/20 transition-colors" />
+          <button onClick={addClient} className="px-6 py-2 bg-amber-500 hover:bg-amber-400 text-neutral-950 font-semibold rounded-lg text-sm transition-colors">Save</button>
+          <button onClick={() => setIsAdding(false)} className="px-4 py-2 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 font-medium rounded-lg text-sm transition-colors">Cancel</button>
+        </div>
       )}
 
-      {/* Main Table */}
-      <div className={`rounded-2xl border ${THEME.border} bg-slate-900/30 overflow-hidden shadow-xl`}>
+      <div className="rounded-2xl border border-white/[0.06] bg-neutral-900/40 overflow-hidden shadow-xl shadow-black/20">
         <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-                <thead>
-                    <tr className="bg-slate-950 border-b border-slate-800 text-xs uppercase text-slate-400 tracking-wider">
-                        <th className="p-5 font-bold">Client Name</th>
-                        <th className="p-5 text-center w-40">
-                            <div className="flex flex-col items-center"><span>TDS Payment</span><span className="text-[10px] text-amber-500 bg-amber-900/20 px-2 rounded mt-1">Due: 7th</span></div>
-                        </th>
-                        <th className="p-5 text-center w-40">
-                            <div className="flex flex-col items-center"><span>GSTR-1</span><span className="text-[10px] text-purple-400 bg-purple-900/20 px-2 rounded mt-1">Due: 11th</span></div>
-                        </th>
-                        <th className="p-5 text-center w-40">
-                            <div className="flex flex-col items-center"><span>GSTR-3B</span><span className="text-[10px] text-blue-400 bg-blue-900/20 px-2 rounded mt-1">Due: 20th</span></div>
-                        </th>
-                        <th className="p-5 w-16"></th>
-                    </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-800/50">
-                    {filteredClients.length > 0 ? (
-                        filteredClients.map((client) => (
-                            <tr key={client.id} className="hover:bg-slate-800/30 transition-colors group">
-                                <td className="p-5 font-medium text-slate-200 text-sm border-r border-slate-800/50">{client.name}</td>
-                                <td className="p-5 text-center border-r border-slate-800/50"><div className="flex justify-center"><StatusBadge status={client.tds} onClick={() => toggleStatus(client.id, 'tds')} /></div></td>
-                                <td className="p-5 text-center border-r border-slate-800/50"><div className="flex justify-center"><StatusBadge status={client.gstr1} onClick={() => toggleStatus(client.id, 'gstr1')} /></div></td>
-                                <td className="p-5 text-center border-r border-slate-800/50"><div className="flex justify-center"><StatusBadge status={client.gstr3b} onClick={() => toggleStatus(client.id, 'gstr3b')} /></div></td>
-                                <td className="p-5 text-center">
-                                    <button onClick={() => deleteClient(client.id)} className="p-2 text-slate-600 hover:text-red-400 hover:bg-red-900/10 rounded-lg transition-all opacity-0 group-hover:opacity-100"><Trash2 className="w-4 h-4" /></button>
-                                </td>
-                            </tr>
-                        ))
-                    ) : (
-                        <tr><td colSpan="5" className="p-10 text-center text-slate-500">No clients found for this user.</td></tr>
-                    )}
-                </tbody>
-            </table>
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="bg-black/20 border-b border-white/[0.06] text-xs uppercase text-neutral-500 tracking-wider">
+                <th className="p-5 font-semibold">Client Name</th>
+                <th className="p-5 text-center w-40">
+                  <div className="flex flex-col items-center"><span>TDS Payment</span><span className="text-[10px] text-amber-400 bg-amber-500/10 px-2 rounded mt-1">Due: 7th</span></div>
+                </th>
+                <th className="p-5 text-center w-40">
+                  <div className="flex flex-col items-center"><span>GSTR-1</span><span className="text-[10px] text-sky-400 bg-sky-500/10 px-2 rounded mt-1">Due: 11th</span></div>
+                </th>
+                <th className="p-5 text-center w-40">
+                  <div className="flex flex-col items-center"><span>GSTR-3B</span><span className="text-[10px] text-violet-400 bg-violet-500/10 px-2 rounded mt-1">Due: 20th</span></div>
+                </th>
+                <th className="p-5 w-16"></th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-white/[0.06]">
+              {filteredClients.length > 0 ? (
+                filteredClients.map((client) => (
+                  <tr key={client.id} className="hover:bg-white/[0.02] transition-colors group">
+                    <td className="p-5 font-medium text-neutral-200 text-sm border-r border-white/[0.04]">{client.name}</td>
+                    <td className="p-5 text-center border-r border-white/[0.04]"><div className="flex justify-center"><StatusBadge status={client.tds} onClick={() => toggleStatus(client.id, 'tds')} /></div></td>
+                    <td className="p-5 text-center border-r border-white/[0.04]"><div className="flex justify-center"><StatusBadge status={client.gstr1} onClick={() => toggleStatus(client.id, 'gstr1')} /></div></td>
+                    <td className="p-5 text-center border-r border-white/[0.04]"><div className="flex justify-center"><StatusBadge status={client.gstr3b} onClick={() => toggleStatus(client.id, 'gstr3b')} /></div></td>
+                    <td className="p-5 text-center">
+                      <button onClick={() => deleteClient(client.id)} className="p-2 text-neutral-600 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-all opacity-0 group-hover:opacity-100"><Trash2 className="w-4 h-4" /></button>
+                    </td>
+                  </tr>
+                ))
+              ) : (
+                <tr><td colSpan="5"><EmptyState icon={Search} title="No clients found" subtitle="Add a client to start tracking their compliance deadlines." /></td></tr>
+              )}
+            </tbody>
+          </table>
         </div>
       </div>
-      
-      <div className="flex justify-end text-xs text-slate-500 items-center gap-2">
-          {saveStatus === 'saving' && <><RefreshCw className="w-3 h-3 animate-spin"/> Saving...</>}
-          {saveStatus === 'saved' && <><Save className="w-3 h-3"/> Changes Saved to Database</>}
-          {saveStatus === 'error' && <span className="text-red-500">Failed to Save! Check Backend.</span>}
+
+      <div className="flex justify-end text-xs text-neutral-500 items-center gap-2">
+        {saveStatus === 'saving' && <><RefreshCw className="w-3 h-3 animate-spin" /> Saving…</>}
+        {saveStatus === 'saved' && <><Save className="w-3 h-3" /> Changes saved</>}
+        {saveStatus === 'error' && <span className="text-red-400">Failed to save — check your connection.</span>}
       </div>
     </div>
   );
