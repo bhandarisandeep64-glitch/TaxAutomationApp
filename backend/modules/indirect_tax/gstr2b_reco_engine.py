@@ -1,8 +1,11 @@
+import logging
 import pandas as pd
 from io import BytesIO
 import numpy as np
 import re
 from xlsxwriter.utility import xl_col_to_name
+
+logger = logging.getLogger(__name__)
 
 # ==========================================
 #  SECTION 1: SHARED UTILITIES (ADVANCED)
@@ -65,7 +68,16 @@ def add_formatting_and_subtotals(writer, df, sheet_name):
 # ==========================================
 
 def filter_portal_sheets(xls):
-    sheets_to_delete_always = ["Read me", "ITC Available", "ITC not available", "ITC Reversal", "ITC Rejected"]
+    # NOTE: "ITC Available" / "ITC not available" / "ITC Reversal" / "ITC Rejected"
+    # sheets used to be dropped outright, which silently discarded ITC-eligibility
+    # data straight off the government portal. They're now kept and flow through
+    # the normal cleaning pipeline like every other sheet (see clean_portal_df) so
+    # a CA can see them in the output workbook instead of the tool throwing them
+    # away. They're still not merged into the reconciliation match logic -- their
+    # real column layout hasn't been verified against a live GSTR-2B export, so
+    # merging them automatically risked producing a wrong ITC-eligibility tag,
+    # which is worse than not having the feature at all.
+    sheets_to_delete_always = ["Read me"]
     conditional_delete_map = {
         "B2B": 7, "B2B-CDNR": 7, "ECO": 7, "ISD": 7, "IMPG": 7, "IMPGSEZ": 7,
         "B2B (ITC Reversal)": 7, "B2B-DNR": 7, "B2BA": 8, "B2B-CDNRA": 8
@@ -80,7 +92,9 @@ def filter_portal_sheets(xls):
                 target_idx = conditional_delete_map[sheet_clean] - 1
                 if len(df) <= target_idx or df.iloc[target_idx].isna().all(): continue
             kept_dataframes[sheet] = df
-        except: continue
+        except Exception as e:
+            logger.warning(f"Skipped portal sheet '{sheet}': {e}")
+            continue
     return kept_dataframes
 
 def clean_portal_df(df_raw, sheet_name):
@@ -141,6 +155,13 @@ def clean_portal_df(df_raw, sheet_name):
         if col in df_data.columns and df_data[col].abs().max() == 0: df_data.drop(columns=[col], inplace=True)
         
     return df_data
+
+# Sheets that carry ITC-eligibility information rather than a distinct set of
+# transactions. Kept and shown in the output workbook for reference, but
+# deliberately NOT merged into the match/reconciliation logic below -- their
+# rows likely overlap with invoices already listed in B2B/ECO/etc, and
+# reconciling them too would double-count those invoices.
+ITC_REFERENCE_SHEETS = {"ITC Available", "ITC not available", "ITC Reversal", "ITC Rejected"}
 
 # ==========================================
 #  SECTION 3: ODOO CLEANING LOGIC (PRESERVED)
@@ -223,13 +244,14 @@ def process_odoo_logic_4files(file_dict):
         file = file_dict.get(key)
         if not file: return None
         try:
-            # Check filename extension manually or try reading as excel then csv
+            return pd.read_excel(file)
+        except Exception:
             try:
-                return pd.read_excel(file)
-            except:
                 file.seek(0)
                 return pd.read_csv(file)
-        except: return None
+            except Exception as e:
+                logger.warning(f"Could not read Odoo file for '{key}': {e}")
+                return None
 
     # --- 1. REGULAR (B2B) ---
     reg_cgst = load_df('odoo_reg_cgst')
@@ -276,14 +298,25 @@ def clean_inv_str(s):
     if pd.isna(s): return ""
     return re.sub(r'[^a-zA-Z0-9]', '', str(s).lower())
 
+def get_itc_deadline(invoice_date):
+    """Section 16(4): ITC on an invoice must be claimed by 30th November
+    following the end of the financial year (Apr-Mar) it belongs to. Returns
+    None if invoice_date isn't a usable date. This is the statutory ceiling,
+    not the earlier "date of filing the annual return" cutoff (we don't have
+    that filing date available here), so it's a conservative/latest bound."""
+    if pd.isna(invoice_date): return None
+    year, month = invoice_date.year, invoice_date.month
+    fy_end_year = year + 1 if month >= 4 else year
+    return pd.Timestamp(year=fy_end_year, month=11, day=30)
+
 def generate_lookup_map(data_source):
     exact_map = {}
-    amount_map = {} 
-    
+    amount_map = {}
+
     for key, val in data_source.items():
-        if isinstance(val, pd.DataFrame): df = val 
-        else: df = val['df'] 
-        
+        if isinstance(val, pd.DataFrame): df = val
+        else: df = val['df']
+
         # Support both Taxable Value and Taxable Amt.
         col_inv = 'Invoice Number'
         col_tax = 'Taxable Value' if 'Taxable Value' in df.columns else 'Taxable Amt.'
@@ -292,20 +325,28 @@ def generate_lookup_map(data_source):
             for _, row in df.iterrows():
                 inv_raw = str(row[col_inv]).strip()
                 inv_clean = clean_inv_str(inv_raw)
-                
+                if not inv_clean:
+                    continue
+
                 try:
                     raw_tax = float(row[col_tax])
                     tax_val = raw_tax if pd.notnull(raw_tax) else 0.0
-                except:
+                except (TypeError, ValueError):
                     tax_val = 0.0
 
-                exact_key = str(row[col_inv]).strip().lower()
-                if exact_key not in exact_map: exact_map[exact_key] = tax_val
-                
-                amt_key = f"{tax_val:.2f}"
-                if amt_key not in amount_map: amount_map[amt_key] = []
-                
-                amount_map[amt_key].append({
+                # Exact-match key is normalized the same way as the fuzzy key
+                # (lowercased, punctuation/whitespace stripped) so "INV-001",
+                # "inv 001" and "INV001" are all treated as the same invoice
+                # instead of only matching on identical formatting.
+                if inv_clean not in exact_map:
+                    exact_map[inv_clean] = tax_val
+
+                # Bucketed to the nearest rupee rather than the exact paisa
+                # value, so a small rounding difference between the portal
+                # and the books doesn't stop the fuzzy invoice-number check
+                # below from ever getting a chance to run.
+                amt_key = round(tax_val)
+                amount_map.setdefault(amt_key, []).append({
                     'clean_inv': inv_clean,
                     'tax_val': tax_val
                 })
@@ -314,52 +355,65 @@ def generate_lookup_map(data_source):
 
 def apply_reco_logic(df, lookup_maps, target_col_name, is_portal_sheet, reco_month_dt=None):
     exact_map, amount_map = lookup_maps
-    
+
     df[target_col_name] = 0.0; df['Difference'] = 0.0; df['Remarks'] = ''
+    if is_portal_sheet:
+        df['ITC Time-Barred'] = ''
     col_inv = 'Invoice Number'
     col_tax = 'Taxable Value' if 'Taxable Value' in df.columns else 'Taxable Amt.'
-    col_date = 'Invoice date' 
-    
+    col_date = 'Invoice date'
+
     if col_inv not in df.columns: return df
 
-    if is_portal_sheet and reco_month_dt and col_date in df.columns:
-        df[col_date] = pd.to_datetime(df[col_date], dayfirst=True, errors='coerce')
+    if col_date in df.columns:
+        # Try day-first first (standard Indian format); anything still
+        # unparsed gets a second attempt the other way round instead of
+        # being silently given up on.
+        raw_dates = df[col_date]
+        parsed = pd.to_datetime(raw_dates, dayfirst=True, errors='coerce')
+        still_unparsed = parsed.isna() & raw_dates.notna()
+        if still_unparsed.any():
+            parsed.loc[still_unparsed] = pd.to_datetime(raw_dates[still_unparsed], dayfirst=False, errors='coerce')
+        df[col_date] = parsed
+
+    today = pd.Timestamp.now().normalize()
 
     def row_logic(row):
         inv_raw = str(row.get(col_inv, '')).strip()
         inv_clean = clean_inv_str(inv_raw)
-        inv_exact_key = inv_raw.lower()
-        
+
         my_tax = float(row.get(col_tax, 0)) if pd.notnull(row.get(col_tax, 0)) else 0.0
-        
+
         remark = ""
         other_val = 0.0
         diff = 0.0
         match_found = False
-        
-        # 1. Exact Match
-        if inv_exact_key in exact_map:
-            other_val = exact_map[inv_exact_key]
-            if abs(my_tax - other_val) < 2:
-                match_found = True
-                remark = "Match"
-            else:
-                 match_found = True 
-                 remark = "Mismatch"
 
-        # 2. Fuzzy Match (Amount Based)
-        if not match_found:
-            amt_key = f"{my_tax:.2f}"
-            if amt_key in amount_map:
-                candidates = amount_map[amt_key]
+        # 1. Exact match (case/whitespace/punctuation-insensitive)
+        if inv_clean and inv_clean in exact_map:
+            other_val = exact_map[inv_clean]
+            match_found = True
+            remark = "Match" if abs(my_tax - other_val) < 2 else "Mismatch"
+
+        # 2. Fuzzy match: same invoice-number substring logic as before, but
+        # checked across neighboring rupee buckets (not just the exact paisa
+        # bucket) so small rounding differences don't block it.
+        if not match_found and inv_clean:
+            rounded = round(my_tax)
+            for amt_key in (rounded, rounded - 1, rounded + 1):
+                candidates = amount_map.get(amt_key)
+                if not candidates:
+                    continue
                 for cand in candidates:
                     cand_clean = cand['clean_inv']
-                    if (inv_clean and cand_clean) and ((inv_clean in cand_clean) or (cand_clean in inv_clean)):
+                    if cand_clean and ((inv_clean in cand_clean) or (cand_clean in inv_clean)):
                         other_val = cand['tax_val']
                         match_found = True
                         remark = "Match (Fuzzy)"
-                        break 
-        
+                        break
+                if match_found:
+                    break
+
         if match_found:
             diff = my_tax - other_val
             if abs(diff) > 2: remark = "Mismatch"
@@ -367,24 +421,29 @@ def apply_reco_logic(df, lookup_maps, target_col_name, is_portal_sheet, reco_mon
             remark = "Not in Books" if is_portal_sheet else "Not on Portal"
             diff = my_tax
 
-        # 3. Date Check
-        if is_portal_sheet and reco_month_dt and pd.notnull(row.get(col_date)):
-            try:
-                inv_dt = row[col_date]
-                if isinstance(inv_dt, str):
-                     pass 
-                elif inv_dt < reco_month_dt:
-                    if "Match" in remark: remark += " (Old Inv)" 
-                    else: remark = "Previous Period Inv" 
-            except: pass
+        itc_barred = ''
+        inv_dt = row.get(col_date) if col_date in row else None
+        has_date = isinstance(inv_dt, pd.Timestamp) and pd.notnull(inv_dt)
 
-        return pd.Series([other_val, diff, remark])
+        # 3. Previous-period check (portal side only, requires a reco month)
+        if is_portal_sheet and reco_month_dt is not None and has_date and inv_dt < reco_month_dt:
+            remark = (remark + " (Old Inv)") if "Match" in remark else "Previous Period Inv"
+
+        # 4. Section 16(4) time-barred ITC check (portal side only)
+        if is_portal_sheet and has_date:
+            deadline = get_itc_deadline(inv_dt)
+            if deadline is not None and today > deadline:
+                itc_barred = f"YES (was due {deadline.strftime('%d-%b-%Y')})"
+
+        return pd.Series([other_val, diff, remark, itc_barred])
 
     results = df.apply(row_logic, axis=1)
     if not results.empty:
         df[target_col_name] = results[0]
         df['Difference'] = results[1]
         df['Remarks'] = results[2]
+        if is_portal_sheet:
+            df['ITC Time-Barred'] = results[3]
     return df
 
 # ==========================================
@@ -438,30 +497,62 @@ def get_smart_sorted_order(portal_dict, books_dict):
     return final_order
 
 # ==========================================
-#  SECTION 6: MAIN ENTRY POINT
+#  SECTION 6: VENDOR SUMMARY
+# ==========================================
+
+def generate_vendor_summary(processed_portal):
+    """Rolls up the portal-side reconciliation results by vendor, so a CA can
+    see which suppliers have the most mismatches/missing invoices without
+    reading through every row of every sheet."""
+    frames = [df for df in processed_portal.values() if 'Remarks' in df.columns and 'Vendor Name' in df.columns]
+    if not frames:
+        return pd.DataFrame()
+
+    combined = pd.concat(frames, ignore_index=True)
+    combined['Vendor Name'] = combined['Vendor Name'].replace('', np.nan).fillna('Unknown')
+
+    group_cols = ['Vendor Name'] + (['GSTIN'] if 'GSTIN' in combined.columns else [])
+    grouped = combined.groupby(group_cols).agg(
+        Total_Invoices=('Remarks', 'count'),
+        Matched=('Remarks', lambda s: s.str.startswith('Match').sum()),
+        Mismatched=('Remarks', lambda s: (s == 'Mismatch').sum()),
+        Not_In_Books=('Remarks', lambda s: (s == 'Not in Books').sum()),
+        Total_Difference=('Difference', 'sum'),
+    ).reset_index()
+    count_cols = ['Total_Invoices', 'Matched', 'Mismatched', 'Not_In_Books']
+    grouped[count_cols] = grouped[count_cols].astype(int)
+
+    return grouped.reindex(grouped['Total_Difference'].abs().sort_values(ascending=False).index)
+
+# ==========================================
+#  SECTION 7: MAIN ENTRY POINT
 # ==========================================
 
 def generate_reco_report(file_portal, odoo_files_dict, month_str=None):
     output = BytesIO()
     reco_dt = None
-    
-    # Try to parse month if provided
+
     if month_str:
         try:
             reco_dt = pd.to_datetime(month_str + "-01")
-        except:
-            pass 
+        except (ValueError, TypeError) as e:
+            logger.warning(f"Could not parse reconciliation month '{month_str}': {e}")
 
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-        
-        # 1. Portal Processing
+
+        # 1. Portal Processing -- split into sheets to reconcile vs. ITC
+        # reference-only sheets (see ITC_REFERENCE_SHEETS above)
         xls_p = pd.ExcelFile(file_portal)
         raw_portal = filter_portal_sheets(xls_p)
-        clean_portal_dict = {} 
+        clean_portal_dict = {}
+        reference_sheets = {}
         rcm_frames = []
         for sheet, df_raw in raw_portal.items():
             df = clean_portal_df(df_raw, sheet)
             if df.empty: continue
+            if sheet.strip() in ITC_REFERENCE_SHEETS:
+                reference_sheets[sheet] = df
+                continue
             if 'Reverse Charge' in df.columns:
                 is_rcm = df['Reverse Charge'].astype(str).str.strip().str.lower().isin(['yes', 'y'])
                 if is_rcm.any():
@@ -474,7 +565,7 @@ def generate_reco_report(file_portal, odoo_files_dict, month_str=None):
         clean_odoo_dict = process_odoo_logic_4files(odoo_files_dict)
 
         # 3. Indexing
-        books_maps_tuple = generate_lookup_map(clean_odoo_dict) 
+        books_maps_tuple = generate_lookup_map(clean_odoo_dict)
         portal_maps_tuple = generate_lookup_map(clean_portal_dict)
 
         # 4. Apply Logic (Portal Sheets)
@@ -486,14 +577,23 @@ def generate_reco_report(file_portal, odoo_files_dict, month_str=None):
         # 5. Apply Logic (Books Sheets)
         processed_books = {}
         for sheet_name, df in clean_odoo_dict.items():
-            df_final = apply_reco_logic(df, portal_maps_tuple, 'As per Portal', False, None) 
+            df_final = apply_reco_logic(df, portal_maps_tuple, 'As per Portal', False, None)
             processed_books[sheet_name] = df_final
 
-        # 6. Smart Sorting & Writing
+        # 6. Vendor Summary (written first so it's the first tab a reviewer sees)
+        vendor_summary = generate_vendor_summary(processed_portal)
+        if not vendor_summary.empty:
+            add_formatting_and_subtotals(writer, vendor_summary, "Vendor Summary")
+
+        # 7. Smart Sorting & Writing (main reconciliation sheets)
         sorted_sheets = get_smart_sorted_order(processed_portal, processed_books)
-        
         for sheet_title, df_final in sorted_sheets:
             add_formatting_and_subtotals(writer, df_final, sheet_title)
+
+        # 8. ITC reference sheets (not reconciled, shown as-is for cross-check)
+        for sheet_name, df in reference_sheets.items():
+            title = f"{sheet_name} (Reference)"[:31]
+            add_formatting_and_subtotals(writer, df, title)
 
     output.seek(0)
     return output

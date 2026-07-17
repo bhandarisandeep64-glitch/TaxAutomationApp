@@ -362,7 +362,8 @@ def reco_gstr2b_route():
         if not any(f for f in odoo_files.values() if f and f.filename != ''):
             return jsonify({'error': 'Please upload at least one Odoo register file.'}), 400
 
-        excel_file = generate_reco_report(file_portal, odoo_files)
+        month_str = request.form.get('month')  # e.g. "2025-12", used to flag prior-period invoices
+        excel_file = generate_reco_report(file_portal, odoo_files, month_str)
 
         return send_file(
             excel_file,

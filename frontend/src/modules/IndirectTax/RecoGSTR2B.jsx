@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
-  Upload, FileText, CheckCircle, Download, Database, X, Layers, AlertCircle, Terminal as TerminalIcon, Zap
+  Upload, FileText, CheckCircle, Download, Database, X, Layers, AlertCircle, Terminal as TerminalIcon, Zap, Calendar
 } from 'lucide-react';
 import { apiFetch } from '../../api/client';
 import { PageHeader, Card, Button } from '../../components/ui';
@@ -14,6 +14,7 @@ const ODOO_SLOTS = [
 
 export default function RecoGSTR2B() {
   const [portalFile, setPortalFile] = useState(null);
+  const [reconMonth, setReconMonth] = useState('');
   const [odooFiles, setOdooFiles] = useState({
     odoo_reg_cgst: null,
     odoo_reg_igst: null,
@@ -88,6 +89,7 @@ export default function RecoGSTR2B() {
 
     const formData = new FormData();
     formData.append('file_portal', portalFile);
+    if (reconMonth) formData.append('month', reconMonth);
     Object.keys(odooFiles).forEach(key => {
       if (odooFiles[key]) formData.append(key, odooFiles[key]);
     });
@@ -126,10 +128,25 @@ export default function RecoGSTR2B() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-6">
           <Card>
-            <h3 className="text-sm font-semibold text-neutral-200 mb-4 flex items-center gap-2">
-              <span className="w-6 h-6 rounded bg-amber-500/15 text-amber-400 flex items-center justify-center text-xs">1</span>
-              Portal Data (GSTR-2B)
-            </h3>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-semibold text-neutral-200 flex items-center gap-2">
+                <span className="w-6 h-6 rounded bg-amber-500/15 text-amber-400 flex items-center justify-center text-xs">1</span>
+                Portal Data (GSTR-2B)
+              </h3>
+              <div className="relative group cursor-pointer w-40">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <Calendar className="w-4 h-4 text-neutral-500 group-hover:text-amber-400 transition-colors" />
+                </div>
+                <input
+                  type="month"
+                  value={reconMonth}
+                  onChange={(e) => setReconMonth(e.target.value)}
+                  onClick={(e) => { try { e.target.showPicker() } catch (err) { } }}
+                  title="Reconciliation month -- flags portal invoices dated before this month as previous-period"
+                  className="bg-black/20 border border-white/[0.08] text-neutral-300 text-xs font-mono rounded-lg py-2 pl-10 pr-3 w-full focus:outline-none focus:border-amber-500/50 hover:border-white/[0.14] transition-colors cursor-pointer"
+                />
+              </div>
+            </div>
 
             {!portalFile ? (
               <label className="flex flex-col items-center justify-center w-full h-24 border-2 border-dashed border-white/[0.1] rounded-lg cursor-pointer hover:bg-white/[0.02] hover:border-amber-500/40 transition-colors group">
