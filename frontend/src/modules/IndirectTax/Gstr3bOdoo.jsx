@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import {
-  Upload, FileText, CheckCircle, Download, Calculator, X, Plus, Calendar, AlertCircle, Zap, ChevronDown, ChevronRight
+  Upload, FileText, CheckCircle, Download, Calculator, X, Plus, Calendar, AlertCircle, Zap, ChevronDown, ChevronRight, Keyboard, FileUp
 } from 'lucide-react';
 import { apiFetch } from '../../api/client';
 import { PageHeader, Card, Button, UploadSlot } from '../../components/ui';
@@ -12,10 +12,17 @@ const ODOO_SLOTS = [
   { id: 'odoo_rcm_igst', label: 'RCM IGST' },
 ];
 
+const GSTR1_MANUAL_CATEGORIES = ['B2B', 'B2B CDNR', 'B2C', 'B2C CDNR'];
+const emptyManualGstr1 = () => Object.fromEntries(
+  GSTR1_MANUAL_CATEGORIES.map(cat => [cat, { taxable: '', igst: '', cgst: '', sgst: '' }])
+);
+
 export default function Gstr3bOdoo() {
   const [clientName, setClientName] = useState('');
   const [period, setPeriod] = useState('');
+  const [gstr1Mode, setGstr1Mode] = useState('upload'); // 'upload' | 'manual'
   const [gstr1Files, setGstr1Files] = useState([]);
+  const [manualGstr1, setManualGstr1] = useState(emptyManualGstr1());
   const [portalFile, setPortalFile] = useState(null);
   const [odooFiles, setOdooFiles] = useState({
     odoo_reg_cgst: null, odoo_reg_igst: null, odoo_rcm_cgst: null, odoo_rcm_igst: null,
@@ -35,6 +42,10 @@ export default function Gstr3bOdoo() {
   };
   const removeGstr1File = (index) => setGstr1Files(prev => prev.filter((_, i) => i !== index));
 
+  const handleManualGstr1Change = (cat, field) => (e) => {
+    setManualGstr1(prev => ({ ...prev, [cat]: { ...prev[cat], [field]: e.target.value } }));
+  };
+
   const handleOdooChange = (key) => (e) => {
     if (e.target.files[0]) setOdooFiles(prev => ({ ...prev, [key]: e.target.files[0] }));
   };
@@ -43,7 +54,7 @@ export default function Gstr3bOdoo() {
   const handleRun = async () => {
     if (!clientName.trim()) { setStatus('error'); setMessage('Client name is required.'); return; }
     if (!period) { setStatus('error'); setMessage('Period is required.'); return; }
-    if (gstr1Files.length === 0) { setStatus('error'); setMessage('At least one GSTR-1 Odoo file is required.'); return; }
+    if (gstr1Mode === 'upload' && gstr1Files.length === 0) { setStatus('error'); setMessage('At least one GSTR-1 Odoo file is required (or switch to manual entry).'); return; }
     if (!portalFile) { setStatus('error'); setMessage('GSTR-2B portal file is required.'); return; }
     if (!Object.values(odooFiles).some(f => f)) { setStatus('error'); setMessage('At least one Odoo purchase register is required.'); return; }
 
@@ -53,7 +64,21 @@ export default function Gstr3bOdoo() {
     const formData = new FormData();
     formData.append('client_name', clientName.trim());
     formData.append('period', period);
-    gstr1Files.forEach(f => formData.append('gstr1_files', f));
+    if (gstr1Mode === 'manual') {
+      const payload = {};
+      GSTR1_MANUAL_CATEGORIES.forEach(cat => {
+        const row = manualGstr1[cat];
+        payload[cat] = {
+          taxable: parseFloat(row.taxable) || 0,
+          igst: parseFloat(row.igst) || 0,
+          cgst: parseFloat(row.cgst) || 0,
+          sgst: parseFloat(row.sgst) || 0,
+        };
+      });
+      formData.append('gstr1_manual', JSON.stringify(payload));
+    } else {
+      gstr1Files.forEach(f => formData.append('gstr1_files', f));
+    }
     formData.append('file_portal', portalFile);
     Object.keys(odooFiles).forEach(key => { if (odooFiles[key]) formData.append(key, odooFiles[key]); });
     if (showOpeningItc) {
@@ -138,29 +163,87 @@ export default function Gstr3bOdoo() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-6">
           <Card>
-            <h3 className="text-sm font-semibold text-neutral-200 mb-4 flex items-center gap-2">
-              <span className="w-6 h-6 rounded bg-amber-500/15 text-amber-400 flex items-center justify-center text-xs">2</span>
-              GSTR-1 Odoo Ledger Files
-            </h3>
-            <div className="relative mb-3">
-              <input type="file" id="gstr1-upload" className="hidden" multiple accept=".xlsx, .csv" onChange={handleGstr1FileChange} />
-              <label
-                htmlFor="gstr1-upload"
-                className="cursor-pointer flex items-center justify-center gap-2 w-full px-4 py-3 rounded-xl border border-dashed border-white/[0.12] hover:border-amber-500/50 hover:bg-white/[0.02] transition-colors text-neutral-500 hover:text-neutral-200"
-              >
-                <Plus className="w-4 h-4" />
-                <span className="text-sm font-medium">Add Sales/CDNR Ledger Files</span>
-              </label>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-semibold text-neutral-200 flex items-center gap-2">
+                <span className="w-6 h-6 rounded bg-amber-500/15 text-amber-400 flex items-center justify-center text-xs">2</span>
+                GSTR-1 Sales Data
+              </h3>
+              <div className="flex items-center gap-1 p-1 rounded-lg border border-white/[0.08] bg-black/20">
+                <button
+                  onClick={() => setGstr1Mode('upload')}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${gstr1Mode === 'upload' ? 'bg-amber-500 text-neutral-950' : 'text-neutral-500 hover:text-neutral-200'}`}
+                >
+                  <FileUp className="w-3.5 h-3.5" /> Upload Files
+                </button>
+                <button
+                  onClick={() => setGstr1Mode('manual')}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${gstr1Mode === 'manual' ? 'bg-amber-500 text-neutral-950' : 'text-neutral-500 hover:text-neutral-200'}`}
+                >
+                  <Keyboard className="w-3.5 h-3.5" /> Enter Manually
+                </button>
+              </div>
             </div>
-            {gstr1Files.length > 0 && (
-              <div className="flex flex-wrap gap-2">
-                {gstr1Files.map((file, index) => (
-                  <div key={index} className="flex items-center gap-2 px-3 py-1.5 rounded-full border border-white/[0.08] bg-neutral-800/60 text-xs text-neutral-300 animate-in zoom-in-95">
-                    <FileText className="w-3 h-3 text-amber-400" />
-                    <span className="truncate max-w-[150px]">{file.name}</span>
-                    <button onClick={() => removeGstr1File(index)} className="hover:text-red-400"><X className="w-3 h-3" /></button>
+
+            {gstr1Mode === 'upload' ? (
+              <>
+                <div className="relative mb-3">
+                  <input type="file" id="gstr1-upload" className="hidden" multiple accept=".xlsx, .csv" onChange={handleGstr1FileChange} />
+                  <label
+                    htmlFor="gstr1-upload"
+                    className="cursor-pointer flex items-center justify-center gap-2 w-full px-4 py-3 rounded-xl border border-dashed border-white/[0.12] hover:border-amber-500/50 hover:bg-white/[0.02] transition-colors text-neutral-500 hover:text-neutral-200"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span className="text-sm font-medium">Add Sales/CDNR Ledger Files</span>
+                  </label>
+                </div>
+                {gstr1Files.length > 0 && (
+                  <div className="flex flex-wrap gap-2">
+                    {gstr1Files.map((file, index) => (
+                      <div key={index} className="flex items-center gap-2 px-3 py-1.5 rounded-full border border-white/[0.08] bg-neutral-800/60 text-xs text-neutral-300 animate-in zoom-in-95">
+                        <FileText className="w-3 h-3 text-amber-400" />
+                        <span className="truncate max-w-[150px]">{file.name}</span>
+                        <button onClick={() => removeGstr1File(index)} className="hover:text-red-400"><X className="w-3 h-3" /></button>
+                      </div>
+                    ))}
                   </div>
-                ))}
+                )}
+              </>
+            ) : (
+              <div className="space-y-3">
+                <p className="text-[11px] text-neutral-500 -mt-1 mb-2">
+                  Enter the GSTR-1 SUMMARY totals as you've already worked them out (same 4 categories as the working paper).
+                </p>
+                <div className="overflow-x-auto -mx-1">
+                  <table className="w-full text-sm min-w-[520px]">
+                    <thead>
+                      <tr className="text-[10px] text-neutral-500 uppercase">
+                        <th className="text-left font-medium px-1 pb-2">Nature</th>
+                        <th className="text-right font-medium px-1 pb-2">Taxable Value</th>
+                        <th className="text-right font-medium px-1 pb-2">IGST</th>
+                        <th className="text-right font-medium px-1 pb-2">CGST</th>
+                        <th className="text-right font-medium px-1 pb-2">SGST</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {GSTR1_MANUAL_CATEGORIES.map(cat => (
+                        <tr key={cat}>
+                          <td className="px-1 py-1 text-xs font-medium text-neutral-300 whitespace-nowrap">{cat}</td>
+                          {['taxable', 'igst', 'cgst', 'sgst'].map(field => (
+                            <td key={field} className="px-1 py-1">
+                              <input
+                                type="number"
+                                placeholder="0.00"
+                                value={manualGstr1[cat][field]}
+                                onChange={handleManualGstr1Change(cat, field)}
+                                className="w-full bg-black/30 border border-white/[0.08] rounded-lg px-2 py-1.5 text-right text-sm text-neutral-100 outline-none focus:border-amber-500/60 focus:ring-2 focus:ring-amber-500/20 transition-colors placeholder-neutral-700"
+                              />
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             )}
           </Card>

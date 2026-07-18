@@ -172,6 +172,23 @@ def compute_gstr1_buckets(gstr1_summary_df):
     return result
 
 
+def build_manual_gstr1_buckets(manual):
+    """Same output shape as compute_gstr1_buckets, but from CA-entered
+    totals instead of parsed ledger files -- used when Odoo's GSTR-1 export
+    format isn't usable and the firm is preparing that summary by hand."""
+    manual = manual or {}
+    result = {}
+    for cat in GSTR1_CATEGORIES:
+        vals = manual.get(cat) or {}
+        result[cat] = {
+            'taxable': float(vals.get('taxable') or 0),
+            'igst': float(vals.get('igst') or 0),
+            'cgst': float(vals.get('cgst') or 0),
+            'sgst': float(vals.get('sgst') or 0),
+        }
+    return result
+
+
 def compute_3b_totals(gstr1_buckets, gstr2b_buckets, opening_itc):
     """The Section 49 offset math, standalone and testable. Used to persist
     a closing ITC balance for next month's opening-ITC auto-fill -- the
@@ -508,13 +525,23 @@ def write_not_claimed_working_sheet(writer, period_label):
 # ==========================================
 
 def generate_gstr3b_report(gstr1_file_paths, file_portal, odoo_files_dict,
-                            owner_user_id, client_name, period, opening_itc_override=None):
+                            owner_user_id, client_name, period, opening_itc_override=None,
+                            manual_gstr1_buckets=None):
     """period: 'YYYY-MM'. Returns a BytesIO xlsx and updates this client's
-    closing ITC balance for next period's opening ITC."""
+    closing ITC balance for next period's opening ITC.
+
+    manual_gstr1_buckets: when provided (dict keyed by GSTR1_CATEGORIES,
+    each a {taxable, igst, cgst, sgst} dict of CA-entered totals), this
+    skips ledger-file parsing entirely -- used while Odoo's GSTR-1 export
+    format is unusable and that summary is prepared by hand."""
     output = BytesIO()
 
-    gstr1_detail_df, gstr1_summary_df = compute_gstr1_data(gstr1_file_paths)
-    gstr1_buckets = compute_gstr1_buckets(gstr1_summary_df)
+    if manual_gstr1_buckets is not None:
+        gstr1_detail_df = None
+        gstr1_buckets = build_manual_gstr1_buckets(manual_gstr1_buckets)
+    else:
+        gstr1_detail_df, gstr1_summary_df = compute_gstr1_data(gstr1_file_paths)
+        gstr1_buckets = compute_gstr1_buckets(gstr1_summary_df)
 
     processed_portal, processed_books, reference_sheets = compute_reco_data(file_portal, odoo_files_dict, period)
     gstr2b_buckets = compute_gstr2b_buckets(processed_portal, processed_books)

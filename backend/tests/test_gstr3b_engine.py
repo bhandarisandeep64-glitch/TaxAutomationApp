@@ -25,7 +25,9 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 import pandas as pd
 
-from modules.indirect_tax.gstr3b_engine import compute_gstr2b_buckets, compute_gstr1_buckets, compute_3b_totals
+from modules.indirect_tax.gstr3b_engine import (
+    compute_gstr2b_buckets, compute_gstr1_buckets, compute_3b_totals, build_manual_gstr1_buckets,
+)
 
 SAMPLE_PATH = r"C:\Users\ASUS\OneDrive\Desktop\2026.06 VTI 3B WORKING.xlsx"
 
@@ -132,8 +134,44 @@ def test_gstr1_bucket_mapping_defaults_missing_categories():
     print("GSTR-1 bucket mapping: OK")
 
 
+def test_manual_gstr1_buckets_matches_computed_shape_and_feeds_offset_math():
+    """Odoo changed its GSTR-1 export format, so the CA now enters the
+    GSTR1 SUMMARY totals by hand instead of uploading ledger files. Confirms
+    build_manual_gstr1_buckets produces the exact same shape
+    compute_gstr1_buckets does (so it's a drop-in for compute_3b_totals),
+    defaults missing categories/fields to zero, and that feeding it through
+    the real offset math reproduces the same real-working-paper figures as
+    test_3b_offset_math_matches_real_working_paper above."""
+    manual = {
+        'B2B': {'taxable': 21440171.09, 'igst': 469783.77, 'cgst': 1658603.57, 'sgst': 1658603.57},
+        'B2B CDNR': {'taxable': 1975887.45, 'igst': 4171.11, 'cgst': 175744.22, 'sgst': 175744.22},
+        'B2C': {'taxable': 2799820.56, 'igst': 0, 'cgst': 251983.72, 'sgst': 251983.72},
+        # B2C CDNR intentionally omitted -- should default to all zeros
+    }
+    buckets = build_manual_gstr1_buckets(manual)
+    assert set(buckets.keys()) == {'B2B', 'B2B CDNR', 'B2C', 'B2C CDNR'}
+    assert buckets['B2C CDNR'] == {'taxable': 0.0, 'igst': 0.0, 'cgst': 0.0, 'sgst': 0.0}
+    assert buckets['B2B']['igst'] == 469783.77
+
+    gstr2b_buckets = {
+        'current_month_b2b': {'taxable': 18194511.6, 'igst': 2508320.11, 'cgst': 354628.66, 'sgst': 354628.63},
+        'previous_month_input': {'taxable': 700224, 'igst': 1725.75, 'cgst': 59913.81, 'sgst': 59913.81},
+        'credit_note': {'taxable': 2089030.04, 'igst': 372608.46, 'cgst': 1708.47, 'sgst': 1708.47},
+        'rcm': {'taxable': 719684.8, 'igst': 5600, 'cgst': 43002.37, 'sgst': 43002.37},
+    }
+    # Add back B2C CDNR's real figures so this reproduces the exact same
+    # real-data totals as the upload-path test (proving the manual path is
+    # numerically equivalent, not just shape-equivalent).
+    buckets['B2C CDNR'] = {'taxable': 36329.66, 'igst': 0, 'cgst': 3269.67, 'sgst': 3269.67}
+    totals = compute_3b_totals(buckets, gstr2b_buckets, {'igst': 0, 'cgst': 0, 'sgst': 0})
+
+    assert _approx(totals['net_payable_cash'], 874049.35, tol=2.0), totals['net_payable_cash']
+    print("Manual GSTR-1 entry: shape OK, defaults OK, offset math matches real working paper")
+
+
 if __name__ == '__main__':
     test_gstr2b_buckets_match_real_working_paper()
     test_3b_offset_math_matches_real_working_paper()
     test_gstr1_bucket_mapping_defaults_missing_categories()
+    test_manual_gstr1_buckets_matches_computed_shape_and_feeds_offset_math()
     print("ALL TESTS PASSED")

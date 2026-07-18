@@ -1,4 +1,5 @@
 import os
+import json
 from dotenv import load_dotenv
 
 # Loads backend/.env into the process environment for local dev.
@@ -468,14 +469,23 @@ def run_gstr3b_odoo():
             'odoo_rcm_igst': request.files.get('odoo_rcm_igst'),
         }
 
-        for file in request.files.getlist('gstr1_files'):
-            if file and file.filename != '':
-                filename = secure_filename(file.filename)
-                fp = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-                file.save(fp)
-                saved_gstr1_paths.append(fp)
-        if not saved_gstr1_paths:
-            return jsonify({'error': 'At least one GSTR-1 Odoo ledger file is required.'}), 400
+        manual_gstr1_buckets = None
+        raw_manual_gstr1 = request.form.get('gstr1_manual')
+        if raw_manual_gstr1:
+            try:
+                manual_gstr1_buckets = json.loads(raw_manual_gstr1)
+            except (TypeError, ValueError):
+                return jsonify({'error': 'Invalid GSTR-1 manual entry data.'}), 400
+
+        if manual_gstr1_buckets is None:
+            for file in request.files.getlist('gstr1_files'):
+                if file and file.filename != '':
+                    filename = secure_filename(file.filename)
+                    fp = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+                    file.save(fp)
+                    saved_gstr1_paths.append(fp)
+            if not saved_gstr1_paths:
+                return jsonify({'error': 'At least one GSTR-1 Odoo ledger file is required (or fill in GSTR-1 amounts manually).'}), 400
 
         opening_itc_override = None
         if any(request.form.get(k) not in (None, '') for k in ('opening_igst', 'opening_cgst', 'opening_sgst')):
@@ -490,7 +500,8 @@ def run_gstr3b_odoo():
 
         excel_file = generate_gstr3b_report(
             saved_gstr1_paths, file_portal, odoo_files,
-            str(g.current_user['id']), client_name, period, opening_itc_override
+            str(g.current_user['id']), client_name, period, opening_itc_override,
+            manual_gstr1_buckets=manual_gstr1_buckets
         )
 
         return send_file(
