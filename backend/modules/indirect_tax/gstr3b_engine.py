@@ -27,12 +27,11 @@ from io import BytesIO
 
 import pandas as pd
 
-from database import db
-from models import GstrPeriodBalance
 from modules.indirect_tax.gstr1_odoo import compute_gstr1_data
 from modules.indirect_tax.gstr2b_reco_engine import (
     compute_reco_data, add_formatting_and_subtotals, get_smart_sorted_order,
 )
+from modules.indirect_tax.gstr_period_balance import get_opening_itc, save_closing_itc
 
 # Standard Odoo chart-of-accounts codes -- confirmed identical for every
 # Odoo client, so these are fixed rather than per-client configuration.
@@ -173,26 +172,6 @@ def compute_gstr1_buckets(gstr1_summary_df):
     return result
 
 
-# ==========================================
-#  OPENING / CLOSING ITC BALANCE
-# ==========================================
-
-def get_opening_itc(owner_user_id, client_name, period, override=None):
-    """Reads the closing balance from the period immediately before `period`
-    for this client. Falls back to 0 if there's no prior record (first run
-    for a new client) or if `override` is explicitly provided."""
-    if override is not None:
-        return override
-
-    year, month = (int(x) for x in period.split('-'))
-    prev_year, prev_month = (year - 1, 12) if month == 1 else (year, month - 1)
-    prev_period = f"{prev_year:04d}-{prev_month:02d}"
-
-    record = db.session.get(GstrPeriodBalance, (owner_user_id, client_name, prev_period))
-    if record:
-        return {'igst': record.closing_itc_igst, 'cgst': record.closing_itc_cgst, 'sgst': record.closing_itc_sgst}
-    return {'igst': 0.0, 'cgst': 0.0, 'sgst': 0.0}
-
 def compute_3b_totals(gstr1_buckets, gstr2b_buckets, opening_itc):
     """The Section 49 offset math, standalone and testable. Used to persist
     a closing ITC balance for next month's opening-ITC auto-fill -- the
@@ -249,15 +228,6 @@ def compute_3b_totals(gstr1_buckets, gstr2b_buckets, opening_itc):
         'remaining_itc': remaining_itc,
     }
 
-def save_closing_itc(owner_user_id, client_name, period, remaining):
-    record = db.session.get(GstrPeriodBalance, (owner_user_id, client_name, period))
-    if not record:
-        record = GstrPeriodBalance(owner_user_id=owner_user_id, client_name=client_name, period=period)
-        db.session.add(record)
-    record.closing_itc_igst = remaining['igst']
-    record.closing_itc_cgst = remaining['cgst']
-    record.closing_itc_sgst = remaining['sgst']
-    db.session.commit()
 
 
 # ==========================================

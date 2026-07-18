@@ -6,6 +6,8 @@ from difflib import SequenceMatcher
 import numpy as np
 from xlsxwriter.utility import xl_col_to_name, xl_rowcol_to_cell
 
+from modules.indirect_tax.gstr_period_balance import get_opening_itc, save_closing_itc
+
 # ==========================================
 #  CONFIGURATION & SETTINGS
 # ==========================================
@@ -553,6 +555,9 @@ def calculate_smart_offset(liability, credit):
     return paid, L, C
 
 def generate_master_dashboard(writer, portal_dict, books_dict, manual_inputs):
+    """Returns the closing ITC balance (bal_credit: {'i','c','s'}) so a
+    caller building a full GSTR-3B working paper (see generate_gstr3b_report
+    below) can persist it as next period's opening ITC."""
     # Set Defaults if manual_inputs are missing
     if not manual_inputs:
         manual_inputs = {
@@ -724,6 +729,8 @@ def generate_master_dashboard(writer, portal_dict, books_dict, manual_inputs):
         ws.write(xl_r, 0, row[0], s_num)
         ws.write(xl_r, 1, row[1], s_num)
 
+    return {'igst': bal_credit['i'], 'cgst': bal_credit['c'], 'sgst': bal_credit['s']}
+
 def generate_vendor_summary(writer, portal_dict, books_dict):
     stats = {}
     def find_cols_robust(df):
@@ -852,10 +859,18 @@ def get_smart_sorted_order(portal_dict, books_dict):
 #  MAIN ENTRY POINT (CALLED BY APP.PY)
 # ==========================================
 
-def generate_reco_report_zoho(file_portal, file_zoho, manual_inputs=None, month_str=None):
+def generate_reco_report_zoho(file_portal, file_zoho, manual_inputs=None, month_str=None,
+                               owner_user_id=None, client_name=None, save_balance=False):
     """
     Main function called by app.py.
     Returns: BytesIO object (Excel file)
+
+    owner_user_id/client_name/save_balance are optional and only used by the
+    full GSTR-3B flow (see generate_gstr3b_zoho_report below): when
+    save_balance=True, the closing ITC balance computed by
+    generate_master_dashboard is persisted for this client/period so next
+    month's opening ITC can auto-fill. The plain GSTR-2B reconciliation
+    route never sets these, so its behavior is unchanged.
     """
     output = BytesIO()
 
@@ -890,7 +905,7 @@ def generate_reco_report_zoho(file_portal, file_zoho, manual_inputs=None, month_
             data['df'] = reconcile_dataframe(data['df'], portal_maps, 'As per Portal', False)
 
         # 5. Generate Summaries
-        generate_master_dashboard(writer, processed_portal_dfs, zoho_data, manual_inputs)
+        closing_balance = generate_master_dashboard(writer, processed_portal_dfs, zoho_data, manual_inputs)
         generate_vendor_summary(writer, processed_portal_dfs, zoho_data)
         generate_discrepancy_sheets(writer, processed_portal_dfs, zoho_data)
 
@@ -904,5 +919,42 @@ def generate_reco_report_zoho(file_portal, file_zoho, manual_inputs=None, month_
             title = f"{sheet_name} (Reference)"[:31]
             add_formatting(writer, df, title)
 
+    if save_balance and owner_user_id and client_name and month_str:
+        save_closing_itc(owner_user_id, client_name, month_str, closing_balance)
+
     output.seek(0)
     return output
+
+
+# ==========================================
+#  FULL GSTR-3B WORKING PAPER (GSTR-1 + GSTR-2B + auto opening/closing ITC)
+# ==========================================
+
+def generate_gstr3b_zoho_report(gstr1_file_paths_dict, file_portal, file_zoho,
+                                 owner_user_id, client_name, period, opening_itc_override=None):
+    """Wraps generate_reco_report_zoho with the two pieces that used to be
+    manual entry: 'sales' figures come from real GSTR-1 Zoho files instead
+    of typed-in numbers, and opening ITC auto-carries from last period's
+    closing balance (falling back to 0 for a client's first run, or the
+    explicit override if given). The Section 49 offset math itself
+    (calculate_smart_offset) is untouched -- it's the same logic already
+    used by the standalone reconciliation tool."""
+    from modules.indirect_tax.gstr1_zoho import compute_gstr1_zoho_data
+
+    gstr1_frames, _ = compute_gstr1_zoho_data(gstr1_file_paths_dict)
+    sales = {'taxable': 0.0, 'igst': 0.0, 'cgst': 0.0, 'sgst': 0.0}
+    if gstr1_frames:
+        for df in gstr1_frames.values():
+            sales['taxable'] += float(pd.to_numeric(df.get('Taxable Amount', 0), errors='coerce').fillna(0).sum())
+            sales['igst'] += float(pd.to_numeric(df.get('Integrated Tax', 0), errors='coerce').fillna(0).sum())
+            sales['cgst'] += float(pd.to_numeric(df.get('Central Tax', 0), errors='coerce').fillna(0).sum())
+            sales['sgst'] += float(pd.to_numeric(df.get('State/UT Tax', 0), errors='coerce').fillna(0).sum())
+
+    opening = get_opening_itc(owner_user_id, client_name, period, opening_itc_override)
+
+    manual_inputs = {'sales': sales, 'opening': opening}
+
+    return generate_reco_report_zoho(
+        file_portal, file_zoho, manual_inputs, period,
+        owner_user_id=owner_user_id, client_name=client_name, save_balance=True,
+    )

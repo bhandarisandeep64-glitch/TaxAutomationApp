@@ -34,7 +34,7 @@ export default function Sidebar({ user, onNavigate, onLogout, currentModule, mob
         { title: "GSTR 1", id: "gstr1", sub: [{ title: "Odoo", id: "gstr1_odoo" }, { title: "Zoho", id: "gstr1_zoho" }] },
         { title: "GSTR 2B", id: "gstr2b", sub: [
             { title: "Odoo", id: "gstr2b_odoo" }, { title: "Zoho", id: "gstr2b_zoho" },
-            { title: "Reconciliation (Odoo)", id: "gstr2b_reco_odoo" }
+            { title: "Reconciliation (Odoo)", id: "gstr2b_reco_odoo" }, { title: "Reconciliation (Zoho)", id: "gstr2b_reco_zoho" }
         ] },
         { title: "GSTR 3B", id: "gstr3b", sub: [{ title: "Odoo", id: "gstr3b_odoo" }, { title: "Zoho", id: "gstr3b_zoho" }] }
       ]

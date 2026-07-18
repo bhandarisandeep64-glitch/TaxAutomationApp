@@ -214,45 +214,74 @@ def save_to_excel_with_format(data_frames_dict, output_path):
             for item in subtotal_formulas:
                 worksheet.write(subtotal_row, item['index'], item['formula'], bold_currency_format)
 
-# --- 6. MAIN WRAPPER ---
+# --- 6. COMPUTE (no file I/O -- shared by process_gstr1_zoho and by
+#         gstr3b_engine.py, which needs the sales totals directly rather
+#         than re-parsing a generated Excel file) ---
+def compute_gstr1_zoho_data(file_paths_dict):
+    """Returns (data_frames_to_save, summary_data). data_frames_to_save has
+    up to two DataFrames keyed 'Invoices' and 'Export Invoices' -- Zoho's
+    export shape doesn't split B2B/B2C/CDNR the way the Odoo ledger export
+    does, so there's no equivalent categorization here. The 'Invoices'
+    sheet comes from the combined Invoice+Credit-Note header file, which
+    Zoho exports with credit notes already negative, so summing it directly
+    nets them out -- there's no separate sign-flip step like the Odoo
+    engine needs for its CDNR file."""
+    data_frames_to_save = {}
+    lookup_dfs = []
+
+    # 1. Invoice Details
+    if 'file_invoice_details' in file_paths_dict:
+        df_inv = clean_and_prepare_details(file_paths_dict['file_invoice_details'], 'Invoice Details')
+        if not df_inv.empty: lookup_dfs.append(df_inv)
+
+    # 2. Credit Note Details
+    if 'file_credit_note_details' in file_paths_dict:
+        df_cn = clean_and_prepare_details(file_paths_dict['file_credit_note_details'], 'Credit Note Details')
+        if not df_cn.empty: lookup_dfs.append(df_cn)
+
+    df_master_lookup = pd.DataFrame()
+    if lookup_dfs:
+        df_master_lookup = pd.concat(lookup_dfs, ignore_index=True)
+        df_master_lookup = df_master_lookup.drop_duplicates(subset=['Entry Number'], keep='first')
+
+    # 3. ICN Header
+    if 'file_invoice_credit_notes' in file_paths_dict:
+        df_icn = read_file_from_path(file_paths_dict['file_invoice_credit_notes'])
+        df_cleaned_icn = apply_cleaning_logic(df_icn, 'ICN Header')
+        if not df_master_lookup.empty:
+            df_cleaned_icn = merge_details_to_headers(df_cleaned_icn, df_master_lookup)
+        data_frames_to_save['Invoices'] = df_cleaned_icn
+
+    # 4. Export Invoices
+    if 'file_export_invoices' in file_paths_dict:
+        df_export = read_file_from_path(file_paths_dict['file_export_invoices'])
+        df_cleaned_export = apply_cleaning_logic(df_export, 'Export Invoices Header')
+        if not df_master_lookup.empty:
+            df_cleaned_export = merge_details_to_headers(df_cleaned_export, df_master_lookup)
+        if 'GSTIN' in df_cleaned_export.columns:
+            df_cleaned_export = df_cleaned_export.drop(columns=['GSTIN'])
+        data_frames_to_save['Export Invoices'] = df_cleaned_export
+
+    if not data_frames_to_save:
+        return None, None
+
+    summary_data = []
+    for sheet, df in data_frames_to_save.items():
+        summary_data.append({
+            'Category': sheet,
+            'Taxable': df['Taxable Amount'].sum() if 'Taxable Amount' in df.columns else 0,
+            'IGST': df['Integrated Tax'].sum() if 'Integrated Tax' in df.columns else 0,
+            'CGST': df['Central Tax'].sum() if 'Central Tax' in df.columns else 0,
+            'SGST': df['State/UT Tax'].sum() if 'State/UT Tax' in df.columns else 0
+        })
+
+    return data_frames_to_save, summary_data
+
+
+# --- 7. MAIN WRAPPER ---
 def process_gstr1_zoho(file_paths_dict, output_folder, custom_filename=None):
     try:
-        data_frames_to_save = {}
-        lookup_dfs = []
-        
-        # 1. Invoice Details
-        if 'file_invoice_details' in file_paths_dict:
-            df_inv = clean_and_prepare_details(file_paths_dict['file_invoice_details'], 'Invoice Details')
-            if not df_inv.empty: lookup_dfs.append(df_inv)
-        
-        # 2. Credit Note Details
-        if 'file_credit_note_details' in file_paths_dict:
-            df_cn = clean_and_prepare_details(file_paths_dict['file_credit_note_details'], 'Credit Note Details')
-            if not df_cn.empty: lookup_dfs.append(df_cn)
-        
-        df_master_lookup = pd.DataFrame()
-        if lookup_dfs:
-            df_master_lookup = pd.concat(lookup_dfs, ignore_index=True)
-            df_master_lookup = df_master_lookup.drop_duplicates(subset=['Entry Number'], keep='first')
-
-        # 3. ICN Header
-        if 'file_invoice_credit_notes' in file_paths_dict:
-            df_icn = read_file_from_path(file_paths_dict['file_invoice_credit_notes'])
-            df_cleaned_icn = apply_cleaning_logic(df_icn, 'ICN Header')
-            if not df_master_lookup.empty:
-                df_cleaned_icn = merge_details_to_headers(df_cleaned_icn, df_master_lookup)
-            data_frames_to_save['Invoices'] = df_cleaned_icn
-
-        # 4. Export Invoices
-        if 'file_export_invoices' in file_paths_dict:
-            df_export = read_file_from_path(file_paths_dict['file_export_invoices'])
-            df_cleaned_export = apply_cleaning_logic(df_export, 'Export Invoices Header')
-            if not df_master_lookup.empty:
-                df_cleaned_export = merge_details_to_headers(df_cleaned_export, df_master_lookup)
-            if 'GSTIN' in df_cleaned_export.columns:
-                df_cleaned_export = df_cleaned_export.drop(columns=['GSTIN'])
-            data_frames_to_save['Export Invoices'] = df_cleaned_export
-
+        data_frames_to_save, summary_data = compute_gstr1_zoho_data(file_paths_dict)
         if not data_frames_to_save:
             return {"success": False, "error": "No Header files uploaded. Please upload 'Inv/CN Headers' or 'Export Invoices'."}
 
@@ -265,17 +294,6 @@ def process_gstr1_zoho(file_paths_dict, output_folder, custom_filename=None):
 
         output_full_path = os.path.join(output_folder, output_filename)
         save_to_excel_with_format(data_frames_to_save, output_full_path)
-        
-        # Summary for Frontend
-        summary_data = []
-        for sheet, df in data_frames_to_save.items():
-            summary_data.append({
-                'Category': sheet,
-                'Taxable': df['Taxable Amount'].sum() if 'Taxable Amount' in df.columns else 0,
-                'IGST': df['Integrated Tax'].sum() if 'Integrated Tax' in df.columns else 0,
-                'CGST': df['Central Tax'].sum() if 'Central Tax' in df.columns else 0,
-                'SGST': df['State/UT Tax'].sum() if 'State/UT Tax' in df.columns else 0
-            })
 
         # Cleanup
         for fp in file_paths_dict.values():

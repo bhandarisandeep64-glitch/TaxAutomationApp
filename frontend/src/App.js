@@ -25,6 +25,7 @@ import Gstr2bZoho from './modules/IndirectTax/Gstr2bZoho';
 import RecoGSTR2B from './modules/IndirectTax/RecoGSTR2B';
 import RecoGSTR2BZoho from './modules/IndirectTax/RecoGSTR2BZoho';
 import Gstr3bOdoo from './modules/IndirectTax/Gstr3bOdoo';
+import Gstr3bZoho from './modules/IndirectTax/Gstr3bZoho';
 
 export default function App() {
   // Initialize user state from LocalStorage if it exists
@@ -94,8 +95,9 @@ const [user, setUser] = useState(() => {
         case 'gstr2b_odoo': return 'GSTR-2B Processing | Odoo';
         case 'gstr2b_zoho': return 'GSTR-2B Processing | Zoho';
         case 'gstr2b_reco_odoo': return 'GSTR-2B Reconciliation | Odoo';
+        case 'gstr2b_reco_zoho': return 'GSTR-2B Reconciliation | Zoho';
         case 'gstr3b_odoo': return 'GSTR-3B Working Paper | Odoo';
-        case 'gstr3b_zoho': return 'GSTR-3B Reco (Zoho)';
+        case 'gstr3b_zoho': return 'GSTR-3B Working Paper | Zoho';
         case 'mario_sales': return 'Mario | Sales Converter';
         default: return 'Workspace';
     }
@@ -124,8 +126,9 @@ const [user, setUser] = useState(() => {
       if (currentModule === 'gstr2b_odoo') return <Gstr2bOdoo />;
       if (currentModule === 'gstr2b_zoho') return <Gstr2bZoho />;
       if (currentModule === 'gstr2b_reco_odoo') return <RecoGSTR2B />;
+      if (currentModule === 'gstr2b_reco_zoho') return <RecoGSTR2BZoho />;
       if (currentModule === 'gstr3b_odoo') return <Gstr3bOdoo />;
-      if (currentModule === 'gstr3b_zoho') return <RecoGSTR2BZoho />;
+      if (currentModule === 'gstr3b_zoho') return <Gstr3bZoho />;
       if (currentModule === 'mario_sales') return <MarioSales />;
       if (currentModule === 'mario_purchase') return <MarioPurchase />;
       

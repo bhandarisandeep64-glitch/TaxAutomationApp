@@ -36,7 +36,7 @@ from modules.indirect_tax.gstr2b_odoo import process_gstr2b_odoo
 from modules.indirect_tax.gstr2b_zoho import process_gstr2b_zoho
 from modules.indirect_tax.gstr1_zoho import process_gstr1_zoho
 from modules.indirect_tax.gstr2b_reco_engine import generate_reco_report
-from modules.indirect_tax.gstr2b_reco_zoho_engine import generate_reco_report_zoho
+from modules.indirect_tax.gstr2b_reco_zoho_engine import generate_reco_report_zoho, generate_gstr3b_zoho_report
 from modules.indirect_tax.gstr3b_engine import generate_gstr3b_report
 
 # --- 5. MARIO IMPORTS ---
@@ -506,6 +506,65 @@ def run_gstr3b_odoo():
 
     finally:
         for fp in saved_gstr1_paths:
+            if os.path.exists(fp): os.remove(fp)
+
+# --- GSTR-3B WORKING PAPER (ZOHO) ---
+@app.route('/api/indirect-tax/gstr3b-zoho', methods=['POST'])
+@require_auth
+def run_gstr3b_zoho():
+    saved_gstr1_paths = {}
+    try:
+        client_name = (request.form.get('client_name') or '').strip()
+        period = (request.form.get('period') or '').strip()
+        if not client_name:
+            return jsonify({'error': 'Client name is required.'}), 400
+        if not period:
+            return jsonify({'error': 'Period (month) is required.'}), 400
+
+        if 'file_portal' not in request.files or 'file_zoho' not in request.files:
+            return jsonify({'error': 'Both Portal and Zoho GSTR-2B files are required.'}), 400
+        file_portal = request.files['file_portal']
+        file_zoho = request.files['file_zoho']
+
+        for key in ['file_invoice_details', 'file_credit_note_details', 'file_invoice_credit_notes', 'file_export_invoices']:
+            file = request.files.get(key)
+            if file and file.filename != '':
+                filename = secure_filename(f"{key}_{file.filename}")
+                fp = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+                file.save(fp)
+                saved_gstr1_paths[key] = fp
+        if not saved_gstr1_paths:
+            return jsonify({'error': "At least one GSTR-1 Zoho header file ('Inv/CN Headers' or 'Export Invoices') is required."}), 400
+
+        opening_itc_override = None
+        if any(request.form.get(k) not in (None, '') for k in ('opening_igst', 'opening_cgst', 'opening_sgst')):
+            def get_float(key):
+                val = request.form.get(key)
+                return float(val) if val not in (None, '') else 0.0
+            opening_itc_override = {
+                'igst': get_float('opening_igst'),
+                'cgst': get_float('opening_cgst'),
+                'sgst': get_float('opening_sgst'),
+            }
+
+        excel_file = generate_gstr3b_zoho_report(
+            saved_gstr1_paths, file_portal, file_zoho,
+            str(g.current_user['id']), client_name, period, opening_itc_override
+        )
+
+        return send_file(
+            excel_file,
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            download_name=f'{client_name} GSTR3B {period}.xlsx',
+            as_attachment=True
+        )
+
+    except Exception as e:
+        print(f"GSTR-3B Zoho Error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+    finally:
+        for fp in saved_gstr1_paths.values():
             if os.path.exists(fp): os.remove(fp)
 
 # ==========================================
