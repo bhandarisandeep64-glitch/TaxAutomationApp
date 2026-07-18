@@ -309,7 +309,10 @@ def update_compliance():
 @require_auth
 def get_notes():
     user_id = request.args.get('user_id')
-    if g.current_user['role'] != 'admin':
+    # Default to the caller's own notes unless an admin explicitly asked to
+    # view a specific other user's -- the frontend never sends user_id for
+    # the normal case, so leaving it unset must not resolve to "nobody's".
+    if user_id is None or g.current_user['role'] != 'admin':
         user_id = str(g.current_user['id'])
     client_name = request.args.get('client_name')
     return jsonify(list_notes(user_id, client_name))
