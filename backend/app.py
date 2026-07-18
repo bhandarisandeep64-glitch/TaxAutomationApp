@@ -30,6 +30,7 @@ from modules.direct_tax import fixed_assets
 
 # --- 3. COMPLIANCE IMPORT ---
 from modules.compliance import load_compliance_data, save_compliance_data
+from modules.notes import list_notes, create_note, update_note, delete_note
 
 # --- 4. INDIRECT TAX IMPORTS ---
 from modules.indirect_tax.gstr1_odoo import process_gstr1_odoo
@@ -300,6 +301,36 @@ def update_compliance():
 
     result = save_compliance_data(user_id, clients)
     return jsonify(result)
+
+# --- NOTES ---
+@app.route('/api/notes', methods=['GET'])
+@require_auth
+def get_notes():
+    user_id = request.args.get('user_id')
+    if g.current_user['role'] != 'admin':
+        user_id = str(g.current_user['id'])
+    client_name = request.args.get('client_name')
+    return jsonify(list_notes(user_id, client_name))
+
+@app.route('/api/notes', methods=['POST'])
+@require_auth
+def create_note_route():
+    data = request.json or {}
+    result = create_note(str(g.current_user['id']), data.get('client_name'), data.get('content'))
+    return jsonify(result), (200 if result.get('success') else 400)
+
+@app.route('/api/notes/<int:note_id>', methods=['PATCH'])
+@require_auth
+def update_note_route(note_id):
+    data = request.json or {}
+    result = update_note(note_id, str(g.current_user['id']), data.get('content'))
+    return jsonify(result), (200 if result.get('success') else 404)
+
+@app.route('/api/notes/<int:note_id>', methods=['DELETE'])
+@require_auth
+def delete_note_route(note_id):
+    result = delete_note(note_id, str(g.current_user['id']))
+    return jsonify(result), (200 if result.get('success') else 404)
 
 # --- INDIRECT TAX ---
 @app.route('/api/indirect-tax/gstr1-odoo', methods=['POST'])

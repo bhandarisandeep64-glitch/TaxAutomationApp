@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { FileText, CheckCircle, Users, LogOut, ChevronDown, ChevronRight, Lock, Landmark } from 'lucide-react';
+import { FileText, CheckCircle, Users, LogOut, ChevronDown, ChevronRight, Lock, Landmark, StickyNote } from 'lucide-react';
 import PeepalLeaf from './icons/PeepalLeaf';
 
 export default function Sidebar({ user, onNavigate, onLogout, currentModule, mobileMenuOpen }) {
@@ -16,6 +16,7 @@ export default function Sidebar({ user, onNavigate, onLogout, currentModule, mob
 
   const menuStructure = [
     { title: "Compliances", id: "compliances", icon: CheckCircle },
+    { title: "Notes", id: "notes", icon: StickyNote },
     {
       title: "Direct Tax",
       id: "direct_tax",

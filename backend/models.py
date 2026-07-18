@@ -54,6 +54,29 @@ class ComplianceRecord(db.Model):
     clients = db.Column(db.JSON, nullable=False, default=list)
 
 
+class Note(db.Model):
+    """A dated log entry against one client -- multiple notes accumulate
+    per client over time (not a single overwritten blob), so nothing here
+    is ever lost when a new entry is added."""
+    __tablename__ = 'notes'
+
+    id = db.Column(db.Integer, primary_key=True)
+    owner_user_id = db.Column(db.String(50), nullable=False, index=True)
+    client_name = db.Column(db.String(120), nullable=False, index=True)
+    content = db.Column(db.Text, nullable=False)
+    created_at = db.Column(db.DateTime, nullable=False, default=db.func.now())
+    updated_at = db.Column(db.DateTime, nullable=False, default=db.func.now(), onupdate=db.func.now())
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "clientName": self.client_name,
+            "content": self.content,
+            "createdAt": self.created_at.isoformat() + "Z",
+            "updatedAt": self.updated_at.isoformat() + "Z",
+        }
+
+
 class GstrPeriodBalance(db.Model):
     """Closing ITC balance for a client at the end of a given period, read
     back as next period's opening ITC so it doesn't need re-entering by
