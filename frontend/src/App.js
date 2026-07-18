@@ -136,12 +136,11 @@ const [user, setUser] = useState(() => {
   };
 
   return (
-    <div className="flex min-h-screen bg-neutral-950 text-neutral-100 relative overflow-hidden selection:bg-amber-500/20 selection:text-amber-100">
+    <div className="flex min-h-screen bg-neutral-950 text-neutral-100 relative overflow-hidden selection:bg-indigo-500/20 selection:text-indigo-100">
 
-      {/* --- GLOBAL BACKGROUND: restrained, corporate --- */}
+      {/* --- GLOBAL BACKGROUND: flat and precise, no glow --- */}
       <div className="fixed inset-0 pointer-events-none z-0">
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_rgba(255,255,255,0.025),_transparent_55%)]" />
-        <div className="absolute bottom-0 right-0 w-[500px] h-[500px] bg-green-950/10 blur-[150px] rounded-full" />
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_rgba(255,255,255,0.02),_transparent_55%)]" />
       </div>
 
       {/* Sidebar is Z-10 to sit above background */}
@@ -160,11 +159,11 @@ const [user, setUser] = useState(() => {
 />
 
           <div className="flex-1 md:ml-64 flex flex-col h-screen">
-             <header className="h-16 border-b border-white/[0.06] bg-neutral-950/60 backdrop-blur-md flex items-center justify-between px-6 sticky top-0 z-30">
+             <header className="h-16 border-b border-white/[0.07] bg-neutral-950 flex items-center justify-between px-6 sticky top-0 z-30">
                  <button onClick={() => setMobileMenuOpen(!mobileMenuOpen)} className="md:hidden text-neutral-400"><Menu /></button>
                  <h1 className="text-sm font-semibold text-neutral-200 hidden md:block tracking-wide uppercase">{getPageTitle(currentModule)}</h1>
                  <div className="flex items-center gap-4">
-                     <button onClick={() => setShowChat(true)} className="relative p-2 text-neutral-400 hover:text-amber-400 transition-colors"><MessageSquare className="w-5 h-5" /></button>
+                     <button onClick={() => setShowChat(true)} className="relative p-2 text-neutral-400 hover:text-indigo-400 transition-colors"><MessageSquare className="w-5 h-5" /></button>
                  </div>
              </header>
 
@@ -179,21 +178,21 @@ const [user, setUser] = useState(() => {
 
       {showRequestModal && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
-              <div className="bg-neutral-900 border border-white/[0.08] p-6 rounded-2xl w-full max-w-md shadow-2xl">
+              <div className="bg-neutral-900 border border-white/[0.08] p-6 rounded-lg w-full max-w-md shadow-lg">
                   <div className="flex justify-between items-start mb-4">
                       <div>
-                          <h3 className="text-base font-semibold text-neutral-100 flex items-center gap-2"><Shield className="w-4.5 h-4.5 text-amber-400"/> Access Denied</h3>
+                          <h3 className="text-base font-semibold text-neutral-100 flex items-center gap-2"><Shield className="w-4.5 h-4.5 text-indigo-400"/> Access Denied</h3>
                           <p className="text-xs text-neutral-500 mt-1">You do not have permission to view {requestedModule}.</p>
                       </div>
                       <button onClick={() => setShowRequestModal(false)}><X className="w-5 h-5 text-neutral-500 hover:text-neutral-200"/></button>
                   </div>
                   <textarea
-                      className="w-full h-24 bg-black/30 border border-white/[0.08] rounded-xl p-3 text-sm text-neutral-100 focus:outline-none focus:border-amber-500/60 focus:ring-2 focus:ring-amber-500/20 transition-colors mb-4"
+                      className="w-full h-24 bg-black/30 border border-white/[0.08] rounded-md p-3 text-sm text-neutral-100 focus:outline-none focus:border-indigo-500/60 focus:ring-2 focus:ring-indigo-500/20 transition-colors mb-4"
                       placeholder="Reason for access..."
                       value={requestReason}
                       onChange={e => setRequestReason(e.target.value)}
                   />
-                  <button onClick={sendAccessRequest} className="w-full py-2.5 bg-amber-500 hover:bg-amber-400 text-neutral-950 font-semibold text-sm rounded-xl transition-colors flex items-center justify-center gap-2">
+                  <button onClick={sendAccessRequest} className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-sm rounded-md transition-colors flex items-center justify-center gap-2">
                       <Send className="w-4 h-4" /> Send Request to Admin
                   </button>
               </div>

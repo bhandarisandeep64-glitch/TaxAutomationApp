@@ -68,7 +68,7 @@ export default function Gstr2bZoho() {
         <div className="flex flex-col md:flex-row gap-8 items-center">
           <div className="flex-1 w-full space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="flex items-center gap-3 px-4 py-3 rounded-xl border border-white/[0.08] bg-black/30 focus-within:border-amber-500/60 focus-within:ring-2 focus-within:ring-amber-500/20 transition-colors">
+              <div className="flex items-center gap-3 px-4 py-3 rounded-lg border border-white/[0.08] bg-black/30 focus-within:border-indigo-500/60 focus-within:ring-2 focus-within:ring-indigo-500/20 transition-colors">
                 <Type className="w-4 h-4 text-neutral-600" />
                 <input
                   type="text"
@@ -83,7 +83,7 @@ export default function Gstr2bZoho() {
                 <input type="file" id="zoho-upload" className="hidden" accept=".xlsx, .csv" onChange={handleFileChange} />
                 <label
                   htmlFor="zoho-upload"
-                  className="cursor-pointer flex items-center justify-center gap-2 w-full px-4 py-3 rounded-xl border border-dashed border-white/[0.12] hover:border-amber-500/50 hover:bg-white/[0.02] transition-colors text-neutral-500 hover:text-neutral-200"
+                  className="cursor-pointer flex items-center justify-center gap-2 w-full px-4 py-3 rounded-lg border border-dashed border-white/[0.12] hover:border-indigo-500/50 hover:bg-white/[0.02] transition-colors text-neutral-500 hover:text-neutral-200"
                 >
                   <Plus className="w-4 h-4" />
                   <span className="text-sm font-medium">Upload Purchase Register</span>
@@ -94,7 +94,7 @@ export default function Gstr2bZoho() {
             {file && (
               <div className="flex items-center gap-3 p-3 rounded-lg border border-white/[0.08] bg-neutral-800/60 text-sm text-neutral-300 animate-in zoom-in-95 w-full md:w-1/2">
                 <div className="p-2 bg-neutral-700/60 rounded">
-                  <FileSpreadsheet className="w-4 h-4 text-amber-400" />
+                  <FileSpreadsheet className="w-4 h-4 text-indigo-400" />
                 </div>
                 <span className="truncate flex-1">{file.name}</span>
                 <button onClick={removeFile} className="p-1 hover:bg-red-500/10 hover:text-red-400 rounded transition-colors">
@@ -119,7 +119,7 @@ export default function Gstr2bZoho() {
             <div className="absolute top-0 left-0 w-full h-1 bg-emerald-500" />
             <CheckCircle className="w-10 h-10 text-emerald-400 mb-3" />
             <h3 className="text-lg font-semibold text-neutral-50 mb-1">Ready</h3>
-            <a href={downloadUrl} download={finalFileName} className="w-full mt-4 flex items-center justify-center gap-2 px-4 py-2.5 bg-amber-500 hover:bg-amber-400 text-neutral-950 text-sm font-semibold rounded-xl transition-colors shadow-lg shadow-amber-500/10">
+            <a href={downloadUrl} download={finalFileName} className="w-full mt-4 flex items-center justify-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold rounded-lg transition-colors shadow-lg shadow-indigo-500/10">
               <Download className="w-4 h-4" /> Download Excel
             </a>
           </Card>
@@ -141,7 +141,7 @@ export default function Gstr2bZoho() {
                 </thead>
                 <tbody className="divide-y divide-white/[0.06]">
                   {summaryData.map((row, idx) => (
-                    <tr key={idx} className={`transition-colors hover:bg-white/[0.02] ${row.Category === 'Total' ? 'font-semibold bg-black/10 text-amber-400' : 'text-neutral-300'}`}>
+                    <tr key={idx} className={`transition-colors hover:bg-white/[0.02] ${row.Category === 'Total' ? 'font-semibold bg-black/10 text-indigo-400' : 'text-neutral-300'}`}>
                       <td className="p-4">{row.Category}</td>
                       <td className="p-4 text-right font-mono">₹{row.Taxable?.toLocaleString()}</td>
                       <td className="p-4 text-right font-mono">₹{row.IGST?.toLocaleString()}</td>

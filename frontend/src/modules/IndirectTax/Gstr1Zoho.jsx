@@ -85,7 +85,7 @@ export default function Gstr1Zoho() {
 
       <Card>
         <div className="mb-6 max-w-md">
-          <div className="flex items-center gap-3 px-4 py-3 rounded-xl border border-white/[0.08] bg-black/30 focus-within:border-amber-500/60 focus-within:ring-2 focus-within:ring-amber-500/20 transition-colors">
+          <div className="flex items-center gap-3 px-4 py-3 rounded-lg border border-white/[0.08] bg-black/30 focus-within:border-indigo-500/60 focus-within:ring-2 focus-within:ring-indigo-500/20 transition-colors">
             <Type className="w-4 h-4 text-neutral-600" />
             <input type="text" placeholder="Report Name (e.g. Nov 2025 Sales)" value={reportName} onChange={(e) => setReportName(e.target.value)}
               className="bg-transparent border-none outline-none text-neutral-100 w-full placeholder-neutral-600 text-sm font-medium" />
@@ -114,7 +114,7 @@ export default function Gstr1Zoho() {
             <div className="absolute top-0 left-0 w-full h-1 bg-emerald-500" />
             <CheckCircle className="w-10 h-10 text-emerald-400 mb-3" />
             <h3 className="text-lg font-semibold text-neutral-50 mb-1">Ready</h3>
-            <a href={downloadUrl} download={finalFileName} className="w-full mt-4 flex items-center justify-center gap-2 px-4 py-2.5 bg-amber-500 hover:bg-amber-400 text-neutral-950 text-sm font-semibold rounded-xl transition-colors shadow-lg shadow-amber-500/10">
+            <a href={downloadUrl} download={finalFileName} className="w-full mt-4 flex items-center justify-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold rounded-lg transition-colors shadow-lg shadow-indigo-500/10">
               <Download className="w-4 h-4" /> Download Excel
             </a>
           </Card>

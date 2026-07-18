@@ -108,9 +108,9 @@ export default function ComplianceTable({ user }) {
             <div className="relative flex-1 md:w-64">
               <Search className="w-4 h-4 text-neutral-600 absolute left-3 top-1/2 -translate-y-1/2" />
               <input type="text" placeholder="Search clients…" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full bg-black/30 border border-white/[0.08] rounded-xl pl-9 pr-4 py-2.5 text-sm text-neutral-100 placeholder-neutral-600 focus:outline-none focus:border-amber-500/60 focus:ring-2 focus:ring-amber-500/20 transition-colors" />
+                className="w-full bg-black/30 border border-white/[0.08] rounded-lg pl-9 pr-4 py-2.5 text-sm text-neutral-100 placeholder-neutral-600 focus:outline-none focus:border-indigo-500/60 focus:ring-2 focus:ring-indigo-500/20 transition-colors" />
             </div>
-            <button onClick={() => setIsAdding(true)} className="bg-amber-500 hover:bg-amber-400 text-neutral-950 p-2.5 rounded-xl transition-colors shadow-lg shadow-amber-500/10 shrink-0">
+            <button onClick={() => setIsAdding(true)} className="bg-indigo-600 hover:bg-indigo-500 text-white p-2.5 rounded-lg transition-colors shadow-lg shadow-indigo-500/10 shrink-0">
               <Plus className="w-5 h-5" />
             </button>
           </div>
@@ -118,16 +118,16 @@ export default function ComplianceTable({ user }) {
       />
 
       {isAdding && (
-        <div className="bg-neutral-900/60 border border-amber-500/30 p-4 rounded-2xl flex gap-4 animate-in slide-in-from-top-2">
+        <div className="bg-neutral-900/60 border border-indigo-500/30 p-4 rounded-lg flex gap-4 animate-in slide-in-from-top-2">
           <input type="text" placeholder="Enter client name" autoFocus value={newClient} onChange={(e) => setNewClient(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && addClient()}
-            className="flex-1 bg-black/30 border border-white/[0.08] rounded-lg px-4 py-2 text-sm text-neutral-100 placeholder-neutral-600 focus:outline-none focus:border-amber-500/60 focus:ring-2 focus:ring-amber-500/20 transition-colors" />
-          <button onClick={addClient} className="px-6 py-2 bg-amber-500 hover:bg-amber-400 text-neutral-950 font-semibold rounded-lg text-sm transition-colors">Save</button>
+            className="flex-1 bg-black/30 border border-white/[0.08] rounded-lg px-4 py-2 text-sm text-neutral-100 placeholder-neutral-600 focus:outline-none focus:border-indigo-500/60 focus:ring-2 focus:ring-indigo-500/20 transition-colors" />
+          <button onClick={addClient} className="px-6 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold rounded-lg text-sm transition-colors">Save</button>
           <button onClick={() => setIsAdding(false)} className="px-4 py-2 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 font-medium rounded-lg text-sm transition-colors">Cancel</button>
         </div>
       )}
 
-      <div className="rounded-2xl border border-white/[0.06] bg-neutral-900/40 overflow-hidden shadow-xl shadow-black/20">
+      <div className="rounded-lg border border-white/[0.06] bg-neutral-900/40 overflow-hidden shadow-xl shadow-black/20">
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>

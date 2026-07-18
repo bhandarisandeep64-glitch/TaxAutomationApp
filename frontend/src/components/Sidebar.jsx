@@ -69,14 +69,14 @@ export default function Sidebar({ user, onNavigate, onLogout, currentModule, mob
               ${getPaddingClass(depth)}
               ${!allowed ? 'cursor-not-allowed opacity-40' : 'hover:bg-white/[0.04] cursor-pointer'}
               transition-colors text-sm group relative
-              ${active ? 'bg-amber-500/10 text-amber-400' : ''}
+              ${active ? 'bg-indigo-500/10 text-indigo-400' : ''}
             `}
           >
             <div className="flex items-center gap-3">
               {(depth === 0 || item.icon) && (
-                item.icon ? <item.icon className={`w-4 h-4 ${depth === 0 ? (active ? 'text-amber-400' : 'text-neutral-500') : 'text-neutral-600'}`} /> : null
+                item.icon ? <item.icon className={`w-4 h-4 ${depth === 0 ? (active ? 'text-indigo-400' : 'text-neutral-500') : 'text-neutral-600'}`} /> : null
               )}
-              <span className={depth === 0 ? `font-medium ${active ? 'text-amber-400' : 'text-neutral-200'}` : 'text-neutral-400'}>
+              <span className={depth === 0 ? `font-medium ${active ? 'text-indigo-400' : 'text-neutral-200'}` : 'text-neutral-400'}>
                 {item.title}
               </span>
             </div>
@@ -102,7 +102,7 @@ export default function Sidebar({ user, onNavigate, onLogout, currentModule, mob
   };
 
   return (
-    <aside className={`fixed inset-y-0 left-0 z-40 w-64 transform ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0 transition-transform duration-300 ease-in-out bg-neutral-950/95 border-r border-white/[0.06] backdrop-blur-xl flex flex-col`}>
+    <aside className={`fixed inset-y-0 left-0 z-40 w-64 transform ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0 transition-transform duration-300 ease-in-out bg-neutral-950 border-r border-white/[0.07] flex flex-col`}>
 
       {/* Brand */}
       <div className="p-5 border-b border-white/[0.06] flex items-center gap-3 shrink-0">
@@ -118,7 +118,7 @@ export default function Sidebar({ user, onNavigate, onLogout, currentModule, mob
         {user.role === 'admin' && (
           <button
             onClick={() => onNavigate('admin_dashboard')}
-            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg mb-3 transition-colors text-sm font-medium ${currentModule === 'admin_dashboard' ? 'bg-amber-500 text-neutral-950' : 'text-neutral-300 hover:bg-white/[0.04]'}`}
+            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-md mb-3 transition-colors text-sm font-medium ${currentModule === 'admin_dashboard' ? 'bg-indigo-600 text-white' : 'text-neutral-300 hover:bg-white/[0.04]'}`}
           >
             <Users className="w-4 h-4" /> Admin Dashboard
           </button>

@@ -100,16 +100,16 @@ export default function AdminDashboard({ currentUser }) {
       </div>
 
       {isAddingUser && (
-        <Card className="border-amber-500/30 animate-in slide-in-from-top-4">
+        <Card className="border-indigo-500/30 animate-in slide-in-from-top-4">
           <h3 className="text-neutral-100 font-semibold mb-4 text-sm">Create New Account</h3>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-            <input type="text" placeholder="Full Name" className="bg-black/30 border border-white/[0.08] rounded-lg px-3 py-2.5 text-sm text-neutral-100 placeholder-neutral-600 focus:outline-none focus:border-amber-500/60 focus:ring-2 focus:ring-amber-500/20 transition-colors" value={newUser.name} onChange={e => setNewUser({ ...newUser, name: e.target.value })} />
-            <input type="text" placeholder="Username" className="bg-black/30 border border-white/[0.08] rounded-lg px-3 py-2.5 text-sm text-neutral-100 placeholder-neutral-600 focus:outline-none focus:border-amber-500/60 focus:ring-2 focus:ring-amber-500/20 transition-colors" value={newUser.username} onChange={e => setNewUser({ ...newUser, username: e.target.value })} />
-            <input type="password" placeholder="Password" className="bg-black/30 border border-white/[0.08] rounded-lg px-3 py-2.5 text-sm text-neutral-100 placeholder-neutral-600 focus:outline-none focus:border-amber-500/60 focus:ring-2 focus:ring-amber-500/20 transition-colors" value={newUser.password} onChange={e => setNewUser({ ...newUser, password: e.target.value })} />
+            <input type="text" placeholder="Full Name" className="bg-black/30 border border-white/[0.08] rounded-lg px-3 py-2.5 text-sm text-neutral-100 placeholder-neutral-600 focus:outline-none focus:border-indigo-500/60 focus:ring-2 focus:ring-indigo-500/20 transition-colors" value={newUser.name} onChange={e => setNewUser({ ...newUser, name: e.target.value })} />
+            <input type="text" placeholder="Username" className="bg-black/30 border border-white/[0.08] rounded-lg px-3 py-2.5 text-sm text-neutral-100 placeholder-neutral-600 focus:outline-none focus:border-indigo-500/60 focus:ring-2 focus:ring-indigo-500/20 transition-colors" value={newUser.username} onChange={e => setNewUser({ ...newUser, username: e.target.value })} />
+            <input type="password" placeholder="Password" className="bg-black/30 border border-white/[0.08] rounded-lg px-3 py-2.5 text-sm text-neutral-100 placeholder-neutral-600 focus:outline-none focus:border-indigo-500/60 focus:ring-2 focus:ring-indigo-500/20 transition-colors" value={newUser.password} onChange={e => setNewUser({ ...newUser, password: e.target.value })} />
           </div>
           <div className="mb-5 flex gap-6">
-            <label className="flex items-center gap-2 text-sm text-neutral-400 cursor-pointer"><input type="checkbox" checked={!newUser.restrictedModules.includes('direct_tax')} onChange={() => toggleNewUserPermission('direct_tax')} className="accent-amber-500" /> Direct Tax</label>
-            <label className="flex items-center gap-2 text-sm text-neutral-400 cursor-pointer"><input type="checkbox" checked={!newUser.restrictedModules.includes('indirect_tax')} onChange={() => toggleNewUserPermission('indirect_tax')} className="accent-amber-500" /> Indirect Tax</label>
+            <label className="flex items-center gap-2 text-sm text-neutral-400 cursor-pointer"><input type="checkbox" checked={!newUser.restrictedModules.includes('direct_tax')} onChange={() => toggleNewUserPermission('direct_tax')} className="accent-indigo-500" /> Direct Tax</label>
+            <label className="flex items-center gap-2 text-sm text-neutral-400 cursor-pointer"><input type="checkbox" checked={!newUser.restrictedModules.includes('indirect_tax')} onChange={() => toggleNewUserPermission('indirect_tax')} className="accent-indigo-500" /> Indirect Tax</label>
           </div>
           <div className="flex gap-2 justify-end">
             <Button variant="secondary" onClick={() => setIsAddingUser(false)}>Cancel</Button>
@@ -120,7 +120,7 @@ export default function AdminDashboard({ currentUser }) {
 
       <Card padded={false}>
         <div className="p-6 border-b border-white/[0.06] flex justify-between items-center">
-          <h3 className="text-sm font-semibold text-neutral-100 flex items-center gap-2 uppercase tracking-wide"><ShieldAlert className="w-4 h-4 text-amber-400" /> Team Access</h3>
+          <h3 className="text-sm font-semibold text-neutral-100 flex items-center gap-2 uppercase tracking-wide"><ShieldAlert className="w-4 h-4 text-indigo-400" /> Team Access</h3>
           <button onClick={fetchAllData} className="text-neutral-500 hover:text-neutral-200 transition-colors"><RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /></button>
         </div>
         <div className="overflow-x-auto">
@@ -140,7 +140,7 @@ export default function AdminDashboard({ currentUser }) {
                         className={`px-2.5 py-1 rounded-md text-xs border transition-colors ${
                           u.restrictedModules && u.restrictedModules.includes('direct_tax')
                             ? 'bg-red-500/5 text-red-500/70 border-red-500/20 line-through hover:opacity-100'
-                            : 'bg-amber-500/10 text-amber-400 border-amber-500/20 hover:bg-amber-500/20'
+                            : 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20 hover:bg-indigo-500/20'
                         }`}
                       >
                         Direct Tax

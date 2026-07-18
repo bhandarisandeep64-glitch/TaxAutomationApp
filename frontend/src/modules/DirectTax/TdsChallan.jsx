@@ -104,7 +104,7 @@ export default function TdsChallan() {
                 <input type="file" id="challan-upload" className="hidden" accept=".xlsx, .csv" onChange={handleFileChange} />
                 <label
                   htmlFor="challan-upload"
-                  className="cursor-pointer flex items-center justify-center gap-2 w-full px-4 py-4 rounded-xl border border-dashed border-white/[0.12] hover:border-amber-500/50 hover:bg-white/[0.02] transition-colors text-neutral-500 hover:text-neutral-200"
+                  className="cursor-pointer flex items-center justify-center gap-2 w-full px-4 py-4 rounded-lg border border-dashed border-white/[0.12] hover:border-indigo-500/50 hover:bg-white/[0.02] transition-colors text-neutral-500 hover:text-neutral-200"
                 >
                   <Plus className="w-5 h-5" />
                   <span className="text-sm font-medium">Select TDS File to Analyze</span>
@@ -114,7 +114,7 @@ export default function TdsChallan() {
               {file && (
                 <div className="flex items-center gap-3 p-3 rounded-lg border border-white/[0.08] bg-neutral-800/60 text-sm text-neutral-300 animate-in zoom-in-95">
                   <div className="p-2 bg-neutral-700/60 rounded">
-                    <FileSpreadsheet className="w-4 h-4 text-amber-400" />
+                    <FileSpreadsheet className="w-4 h-4 text-indigo-400" />
                   </div>
                   <span className="truncate flex-1">{file.name}</span>
                   <button onClick={removeFile} className="p-1 hover:bg-red-500/10 hover:text-red-400 rounded transition-colors">
@@ -137,7 +137,7 @@ export default function TdsChallan() {
       {step === 2 && (
         <div className="space-y-8 animate-in slide-in-from-right-8 duration-500">
           <div className="flex justify-end items-center gap-4">
-            <div className="flex items-center gap-3 px-4 py-2 rounded-xl border border-white/[0.08] bg-black/30 focus-within:border-amber-500/60 transition-colors w-full max-w-xs">
+            <div className="flex items-center gap-3 px-4 py-2 rounded-lg border border-white/[0.08] bg-black/30 focus-within:border-indigo-500/60 transition-colors w-full max-w-xs">
               <Type className="w-4 h-4 text-neutral-600" />
               <input
                 type="text"
@@ -168,35 +168,35 @@ export default function TdsChallan() {
                   <div className="p-6 grid grid-cols-1 md:grid-cols-6 gap-4">
                     <div className="md:col-span-1 space-y-1">
                       <label className="text-[10px] font-semibold text-neutral-500 uppercase">Challan No</label>
-                      <input type="text" className="w-full bg-black/30 border border-white/[0.08] rounded-lg p-2.5 text-sm text-neutral-100 focus:outline-none focus:border-amber-500/60 focus:ring-2 focus:ring-amber-500/20 transition-colors"
+                      <input type="text" className="w-full bg-black/30 border border-white/[0.08] rounded-lg p-2.5 text-sm text-neutral-100 focus:outline-none focus:border-indigo-500/60 focus:ring-2 focus:ring-indigo-500/20 transition-colors"
                         onChange={(e) => handleInputChange(key, 'challan_no', e.target.value)} />
                     </div>
                     <div className="md:col-span-1 space-y-1">
                       <label className="text-[10px] font-semibold text-neutral-500 uppercase">Date</label>
                       <div className="relative">
-                        <input type="date" className="w-full bg-black/30 border border-white/[0.08] rounded-lg p-2.5 text-sm text-neutral-100 focus:outline-none focus:border-amber-500/60 focus:ring-2 focus:ring-amber-500/20 transition-colors appearance-none"
+                        <input type="date" className="w-full bg-black/30 border border-white/[0.08] rounded-lg p-2.5 text-sm text-neutral-100 focus:outline-none focus:border-indigo-500/60 focus:ring-2 focus:ring-indigo-500/20 transition-colors appearance-none"
                           onChange={(e) => handleInputChange(key, 'date', e.target.value)} />
                         <Calendar className="w-3.5 h-3.5 text-neutral-600 absolute right-3 top-3 pointer-events-none" />
                       </div>
                     </div>
                     <div className="md:col-span-1 space-y-1">
                       <label className="text-[10px] font-semibold text-neutral-500 uppercase">BSR Code</label>
-                      <input type="text" className="w-full bg-black/30 border border-white/[0.08] rounded-lg p-2.5 text-sm text-neutral-100 focus:outline-none focus:border-amber-500/60 focus:ring-2 focus:ring-amber-500/20 transition-colors"
+                      <input type="text" className="w-full bg-black/30 border border-white/[0.08] rounded-lg p-2.5 text-sm text-neutral-100 focus:outline-none focus:border-indigo-500/60 focus:ring-2 focus:ring-indigo-500/20 transition-colors"
                         onChange={(e) => handleInputChange(key, 'bsr', e.target.value)} />
                     </div>
                     <div className="md:col-span-1 space-y-1">
                       <label className="text-[10px] font-semibold text-neutral-500 uppercase">Amount</label>
-                      <input type="number" className="w-full bg-black/30 border border-white/[0.08] rounded-lg p-2.5 text-sm text-neutral-100 focus:outline-none focus:border-amber-500/60 focus:ring-2 focus:ring-amber-500/20 transition-colors"
+                      <input type="number" className="w-full bg-black/30 border border-white/[0.08] rounded-lg p-2.5 text-sm text-neutral-100 focus:outline-none focus:border-indigo-500/60 focus:ring-2 focus:ring-indigo-500/20 transition-colors"
                         onChange={(e) => handleInputChange(key, 'amount', e.target.value)} />
                     </div>
                     <div className="md:col-span-1 space-y-1">
                       <label className="text-[10px] font-semibold text-neutral-500 uppercase">Interest</label>
-                      <input type="number" className="w-full bg-black/30 border border-white/[0.08] rounded-lg p-2.5 text-sm text-neutral-100 focus:outline-none focus:border-amber-500/60 focus:ring-2 focus:ring-amber-500/20 transition-colors"
+                      <input type="number" className="w-full bg-black/30 border border-white/[0.08] rounded-lg p-2.5 text-sm text-neutral-100 focus:outline-none focus:border-indigo-500/60 focus:ring-2 focus:ring-indigo-500/20 transition-colors"
                         onChange={(e) => handleInputChange(key, 'interest', e.target.value)} />
                     </div>
                     <div className="md:col-span-1 space-y-1">
                       <label className="text-[10px] font-semibold text-neutral-500 uppercase">Total</label>
-                      <input type="number" className="w-full bg-black/30 border border-white/[0.08] rounded-lg p-2.5 text-sm text-neutral-100 focus:outline-none focus:border-amber-500/60 focus:ring-2 focus:ring-amber-500/20 transition-colors"
+                      <input type="number" className="w-full bg-black/30 border border-white/[0.08] rounded-lg p-2.5 text-sm text-neutral-100 focus:outline-none focus:border-indigo-500/60 focus:ring-2 focus:ring-indigo-500/20 transition-colors"
                         onChange={(e) => handleInputChange(key, 'total', e.target.value)} />
                     </div>
                   </div>
@@ -214,13 +214,13 @@ export default function TdsChallan() {
       )}
 
       {step === 3 && (
-        <div className="p-12 rounded-2xl border border-emerald-500/20 bg-emerald-500/5 text-center animate-in zoom-in-95">
+        <div className="p-12 rounded-lg border border-emerald-500/20 bg-emerald-500/5 text-center animate-in zoom-in-95">
           <div className="w-20 h-20 bg-emerald-500/10 rounded-full flex items-center justify-center mx-auto mb-6">
             <CheckCircle className="w-10 h-10 text-emerald-400" />
           </div>
           <h2 className="text-2xl font-semibold text-neutral-50 mb-2">Challans Mapped Successfully</h2>
           <p className="text-neutral-500 mb-8">Your file has been updated with the details provided.</p>
-          <a href={downloadUrl} className="inline-flex items-center gap-2 px-8 py-3.5 bg-amber-500 hover:bg-amber-400 text-neutral-950 font-semibold rounded-xl transition-colors shadow-lg shadow-amber-500/10">
+          <a href={downloadUrl} className="inline-flex items-center gap-2 px-8 py-3.5 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold rounded-lg transition-colors shadow-lg shadow-indigo-500/10">
             <Download className="w-5 h-5" /> Download Updated File
           </a>
           <button onClick={() => { setStep(1); setFile(null); }} className="block mt-6 mx-auto text-neutral-500 hover:text-neutral-200 text-sm underline transition-colors">

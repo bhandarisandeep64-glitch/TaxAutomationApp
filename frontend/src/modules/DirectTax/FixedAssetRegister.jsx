@@ -108,7 +108,7 @@ export default function FixedAssetRegister() {
       <Card>
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           <div className="lg:col-span-2 space-y-6">
-            <div className="flex items-center justify-between p-4 rounded-xl bg-black/20 border border-white/[0.06]">
+            <div className="flex items-center justify-between p-4 rounded-lg bg-black/20 border border-white/[0.06]">
               <div className="flex items-center gap-3">
                 <FileSpreadsheet className="w-5 h-5 text-emerald-400" />
                 <div>
@@ -125,10 +125,10 @@ export default function FixedAssetRegister() {
                   <input type="file" id="far-upload" className="hidden" accept=".xlsx, .csv" onChange={handleFileChange} />
                   <label
                     htmlFor="far-upload"
-                    className="cursor-pointer flex flex-col items-center justify-center gap-3 w-full h-32 rounded-xl border-2 border-dashed border-white/[0.1] hover:border-amber-500/50 hover:bg-white/[0.02] transition-colors"
+                    className="cursor-pointer flex flex-col items-center justify-center gap-3 w-full h-32 rounded-lg border-2 border-dashed border-white/[0.1] hover:border-indigo-500/50 hover:bg-white/[0.02] transition-colors"
                   >
-                    <div className="p-3 rounded-full bg-neutral-800/60 group-hover:bg-amber-500/10 transition-colors">
-                      <Upload className="w-5 h-5 text-neutral-500 group-hover:text-amber-400" />
+                    <div className="p-3 rounded-full bg-neutral-800/60 group-hover:bg-indigo-500/10 transition-colors">
+                      <Upload className="w-5 h-5 text-neutral-500 group-hover:text-indigo-400" />
                     </div>
                     <span className="text-sm font-medium text-neutral-500 group-hover:text-neutral-200">
                       Upload Asset Excel File
@@ -136,14 +136,14 @@ export default function FixedAssetRegister() {
                   </label>
                 </div>
               ) : (
-                <div className="flex items-center justify-between p-4 rounded-xl border border-amber-500/20 bg-amber-500/5">
+                <div className="flex items-center justify-between p-4 rounded-lg border border-indigo-500/20 bg-indigo-500/5">
                   <div className="flex items-center gap-3">
-                    <div className="p-2 rounded-lg bg-amber-500/10">
-                      <FileText className="w-5 h-5 text-amber-400" />
+                    <div className="p-2 rounded-lg bg-indigo-500/10">
+                      <FileText className="w-5 h-5 text-indigo-400" />
                     </div>
                     <div>
                       <p className="text-sm font-semibold text-neutral-100">{file.name}</p>
-                      <p className="text-xs text-amber-400/70">Ready for calculation</p>
+                      <p className="text-xs text-indigo-400/70">Ready for calculation</p>
                     </div>
                   </div>
                   <button onClick={removeFile} className="p-2 hover:bg-white/[0.06] rounded-full text-neutral-500 hover:text-red-400 transition-colors">
@@ -161,7 +161,7 @@ export default function FixedAssetRegister() {
               </Button>
             </div>
 
-            <div className="flex-1 bg-black/40 rounded-xl border border-white/[0.06] overflow-hidden flex flex-col min-h-[200px]">
+            <div className="flex-1 bg-black/40 rounded-lg border border-white/[0.06] overflow-hidden flex flex-col min-h-[200px]">
               <div className="px-4 py-2 border-b border-white/[0.06] bg-black/20 flex items-center gap-2">
                 <TerminalIcon className="w-3 h-3 text-neutral-500" />
                 <span className="text-[10px] font-mono text-neutral-500 uppercase tracking-wider">System Logs</span>
@@ -171,7 +171,7 @@ export default function FixedAssetRegister() {
                   <span className="text-neutral-700 italic">// Waiting for input…</span>
                 )}
                 {logs.map((log, i) => (
-                  <div key={i} className="text-amber-400/80 animate-in slide-in-from-left-2 fade-in duration-300">
+                  <div key={i} className="text-indigo-400/80 animate-in slide-in-from-left-2 fade-in duration-300">
                     <span className="text-neutral-700 mr-2">{">"}</span>
                     {log}
                   </div>
@@ -183,7 +183,7 @@ export default function FixedAssetRegister() {
       </Card>
 
       {status === 'success' && downloadUrl && (
-        <div className="animate-in slide-in-from-bottom-4 duration-700 bg-emerald-500/5 border border-emerald-500/20 rounded-2xl p-6 flex items-center justify-between">
+        <div className="animate-in slide-in-from-bottom-4 duration-700 bg-emerald-500/5 border border-emerald-500/20 rounded-lg p-6 flex items-center justify-between">
           <div className="flex items-center gap-4">
             <div className="p-3 bg-emerald-500/10 rounded-full">
               <CheckCircle className="w-6 h-6 text-emerald-400" />
@@ -196,7 +196,7 @@ export default function FixedAssetRegister() {
           <a
             href={downloadUrl}
             download={finalFileName}
-            className="flex items-center gap-2 px-6 py-3 bg-amber-500 hover:bg-amber-400 text-neutral-950 text-sm font-semibold rounded-xl transition-colors shadow-lg shadow-amber-500/10"
+            className="flex items-center gap-2 px-6 py-3 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold rounded-lg transition-colors shadow-lg shadow-indigo-500/10"
           >
             <Download className="w-4 h-4" />
             Download Report

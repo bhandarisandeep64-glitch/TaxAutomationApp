@@ -130,12 +130,12 @@ export default function RecoGSTR2B() {
           <Card>
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-sm font-semibold text-neutral-200 flex items-center gap-2">
-                <span className="w-6 h-6 rounded bg-amber-500/15 text-amber-400 flex items-center justify-center text-xs">1</span>
+                <span className="w-6 h-6 rounded bg-indigo-500/15 text-indigo-400 flex items-center justify-center text-xs">1</span>
                 Portal Data (GSTR-2B)
               </h3>
               <div className="relative group cursor-pointer w-40">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <Calendar className="w-4 h-4 text-neutral-500 group-hover:text-amber-400 transition-colors" />
+                  <Calendar className="w-4 h-4 text-neutral-500 group-hover:text-indigo-400 transition-colors" />
                 </div>
                 <input
                   type="month"
@@ -143,13 +143,13 @@ export default function RecoGSTR2B() {
                   onChange={(e) => setReconMonth(e.target.value)}
                   onClick={(e) => { try { e.target.showPicker() } catch (err) { } }}
                   title="Reconciliation month -- flags portal invoices dated before this month as previous-period"
-                  className="bg-black/20 border border-white/[0.08] text-neutral-300 text-xs font-mono rounded-lg py-2 pl-10 pr-3 w-full focus:outline-none focus:border-amber-500/50 hover:border-white/[0.14] transition-colors cursor-pointer"
+                  className="bg-black/20 border border-white/[0.08] text-neutral-300 text-xs font-mono rounded-lg py-2 pl-10 pr-3 w-full focus:outline-none focus:border-indigo-500/50 hover:border-white/[0.14] transition-colors cursor-pointer"
                 />
               </div>
             </div>
 
             {!portalFile ? (
-              <label className="flex flex-col items-center justify-center w-full h-24 border-2 border-dashed border-white/[0.1] rounded-lg cursor-pointer hover:bg-white/[0.02] hover:border-amber-500/40 transition-colors group">
+              <label className="flex flex-col items-center justify-center w-full h-24 border-2 border-dashed border-white/[0.1] rounded-lg cursor-pointer hover:bg-white/[0.02] hover:border-indigo-500/40 transition-colors group">
                 <div className="flex items-center gap-3 text-neutral-500 group-hover:text-neutral-200">
                   <Upload className="w-5 h-5" />
                   <span className="text-sm font-medium">Upload GSTR-2B Excel</span>
@@ -157,9 +157,9 @@ export default function RecoGSTR2B() {
                 <input type="file" className="hidden" accept=".xlsx, .xls" onChange={handlePortalChange} />
               </label>
             ) : (
-              <div className="flex items-center justify-between p-3 bg-amber-500/10 border border-amber-500/20 rounded-lg">
+              <div className="flex items-center justify-between p-3 bg-indigo-500/10 border border-indigo-500/20 rounded-lg">
                 <div className="flex items-center gap-3">
-                  <FileText className="w-5 h-5 text-amber-400" />
+                  <FileText className="w-5 h-5 text-indigo-400" />
                   <span className="text-sm font-medium text-neutral-200 truncate max-w-[250px]">{portalFile.name}</span>
                 </div>
                 <button onClick={() => removeFile('portal')} className="text-neutral-500 hover:text-red-400"><X className="w-4 h-4" /></button>
@@ -169,7 +169,7 @@ export default function RecoGSTR2B() {
 
           <Card>
             <h3 className="text-sm font-semibold text-neutral-200 mb-4 flex items-center gap-2">
-              <span className="w-6 h-6 rounded bg-amber-500/15 text-amber-400 flex items-center justify-center text-xs">2</span>
+              <span className="w-6 h-6 rounded bg-indigo-500/15 text-indigo-400 flex items-center justify-center text-xs">2</span>
               Odoo Registers
             </h3>
 
@@ -178,7 +178,7 @@ export default function RecoGSTR2B() {
                 <div key={field.id} className="space-y-2">
                   <p className="text-xs font-medium text-neutral-500 uppercase">{field.label}</p>
                   {!odooFiles[field.id] ? (
-                    <label className="flex items-center justify-center w-full h-12 border border-dashed border-white/[0.1] rounded-lg cursor-pointer hover:bg-white/[0.02] hover:border-amber-500/40 transition-colors">
+                    <label className="flex items-center justify-center w-full h-12 border border-dashed border-white/[0.1] rounded-lg cursor-pointer hover:bg-white/[0.02] hover:border-indigo-500/40 transition-colors">
                       <span className="text-xs text-neutral-500 flex items-center gap-2">
                         <Upload className="w-3 h-3" /> Select File
                       </span>
@@ -187,7 +187,7 @@ export default function RecoGSTR2B() {
                   ) : (
                     <div className="flex items-center justify-between p-2 bg-neutral-800/60 border border-white/[0.08] rounded-lg">
                       <div className="flex items-center gap-2 overflow-hidden">
-                        <Layers className="w-3 h-3 text-amber-400 flex-shrink-0" />
+                        <Layers className="w-3 h-3 text-indigo-400 flex-shrink-0" />
                         <span className="text-xs text-neutral-300 truncate">{odooFiles[field.id].name}</span>
                       </div>
                       <button onClick={() => removeFile('odoo', field.id)} className="text-neutral-500 hover:text-red-400"><X className="w-3 h-3" /></button>
@@ -213,7 +213,7 @@ export default function RecoGSTR2B() {
             </Button>
           </div>
 
-          <div className="flex-1 bg-black/40 rounded-xl border border-white/[0.06] overflow-hidden flex flex-col min-h-[250px]">
+          <div className="flex-1 bg-black/40 rounded-lg border border-white/[0.06] overflow-hidden flex flex-col min-h-[250px]">
             <div className="px-4 py-2 border-b border-white/[0.06] bg-black/20 flex items-center gap-2">
               <TerminalIcon className="w-3 h-3 text-neutral-500" />
               <span className="text-[10px] font-mono text-neutral-500 uppercase tracking-wider">Engine Logs</span>
@@ -223,7 +223,7 @@ export default function RecoGSTR2B() {
                 <span className="text-neutral-700 italic">// Ready to reconcile…</span>
               )}
               {logs.map((log, i) => (
-                <div key={i} className="text-amber-400/80 animate-in slide-in-from-left-2 fade-in duration-300">
+                <div key={i} className="text-indigo-400/80 animate-in slide-in-from-left-2 fade-in duration-300">
                   <span className="text-neutral-700 mr-2">{">"}</span>
                   {log}
                 </div>
@@ -232,7 +232,7 @@ export default function RecoGSTR2B() {
           </div>
 
           {status === 'success' && downloadUrl && (
-            <div className="animate-in slide-in-from-bottom-4 duration-500 p-4 bg-emerald-500/5 border border-emerald-500/20 rounded-xl">
+            <div className="animate-in slide-in-from-bottom-4 duration-500 p-4 bg-emerald-500/5 border border-emerald-500/20 rounded-lg">
               <h4 className="text-emerald-400 font-semibold text-sm mb-1 flex items-center gap-2">
                 <CheckCircle className="w-4 h-4" /> Reconciliation Success
               </h4>
@@ -240,7 +240,7 @@ export default function RecoGSTR2B() {
               <a
                 href={downloadUrl}
                 download={`GSTR2B_Reco_${new Date().toISOString().slice(0, 10)}.xlsx`}
-                className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-amber-500 hover:bg-amber-400 text-neutral-950 text-xs font-semibold rounded-lg transition-colors"
+                className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold rounded-lg transition-colors"
               >
                 <Download className="w-3 h-3" /> Download Report
               </a>

@@ -237,8 +237,8 @@ export default function RecoGSTR2BZoho() {
   };
 
   const FieldInput = ({ label, name, value, onChange, prefix }) => (
-    <div className="group relative flex flex-col gap-1 bg-black/20 border border-white/[0.08] rounded-lg p-2 focus-within:border-amber-500/50 focus-within:bg-black/30 transition-colors hover:border-white/[0.12]">
-      <label className="text-[9px] font-mono text-neutral-500 uppercase tracking-wider group-focus-within:text-amber-400 transition-colors">
+    <div className="group relative flex flex-col gap-1 bg-black/20 border border-white/[0.08] rounded-lg p-2 focus-within:border-indigo-500/50 focus-within:bg-black/30 transition-colors hover:border-white/[0.12]">
+      <label className="text-[9px] font-mono text-neutral-500 uppercase tracking-wider group-focus-within:text-indigo-400 transition-colors">
         {label}
       </label>
       <div className="flex items-center w-full">
@@ -256,16 +256,16 @@ export default function RecoGSTR2BZoho() {
   );
 
   const FileRow = ({ label, file, onFileChange, onRemove, icon: Icon }) => (
-    <div className="flex items-center justify-between p-2.5 bg-black/30 border border-white/[0.06] rounded-lg transition-colors hover:border-amber-500/20 group">
+    <div className="flex items-center justify-between p-2.5 bg-black/30 border border-white/[0.06] rounded-lg transition-colors hover:border-indigo-500/20 group">
       <div className="flex items-center gap-3">
-        <div className="w-8 h-8 rounded-md bg-amber-500/10 flex items-center justify-center border border-white/[0.05]">
-          <Icon className="w-4 h-4 text-amber-400" />
+        <div className="w-8 h-8 rounded-md bg-indigo-500/10 flex items-center justify-center border border-white/[0.05]">
+          <Icon className="w-4 h-4 text-indigo-400" />
         </div>
         <div className="flex flex-col">
           <span className="text-[9px] font-semibold text-neutral-500 uppercase tracking-widest">{label}</span>
           {file ? (
             <span className="text-xs font-medium text-neutral-100 truncate max-w-[140px] md:max-w-[200px] flex items-center gap-1.5">
-              {file.name} <CheckCircle className="w-3 h-3 text-amber-400" />
+              {file.name} <CheckCircle className="w-3 h-3 text-indigo-400" />
             </span>
           ) : (
             <span className="text-xs text-neutral-700 italic">No file selected</span>
@@ -280,7 +280,7 @@ export default function RecoGSTR2BZoho() {
       ) : (
         <label className="cursor-pointer">
           <input type="file" className="hidden" accept=".xlsx, .xls" onChange={onFileChange} />
-          <div className="px-3 py-1.5 rounded bg-neutral-800/60 border border-white/[0.08] flex items-center gap-2 transition-colors hover:bg-neutral-700/60 hover:border-amber-500/30">
+          <div className="px-3 py-1.5 rounded bg-neutral-800/60 border border-white/[0.08] flex items-center gap-2 transition-colors hover:bg-neutral-700/60 hover:border-indigo-500/30">
             <Upload className="w-3 h-3 text-neutral-400" />
             <span className="text-[10px] font-semibold text-neutral-400 uppercase">Load</span>
           </div>
@@ -300,7 +300,7 @@ export default function RecoGSTR2BZoho() {
           <div className="flex items-center gap-3">
             <button
               onClick={() => setShowSettings(true)}
-              className={`p-2 rounded-full border transition-colors ${!storedApiKey ? 'bg-amber-500/10 border-amber-500/40 text-amber-400' : 'bg-neutral-900/50 border-white/[0.08] text-neutral-400 hover:border-white/[0.16] hover:text-neutral-100'}`}
+              className={`p-2 rounded-full border transition-colors ${!storedApiKey ? 'bg-indigo-500/10 border-indigo-500/40 text-indigo-400' : 'bg-neutral-900/50 border-white/[0.08] text-neutral-400 hover:border-white/[0.16] hover:text-neutral-100'}`}
               title="AI Assistant settings"
             >
               <Settings className="w-4 h-4" />
@@ -308,18 +308,18 @@ export default function RecoGSTR2BZoho() {
 
             <button
               onClick={() => setShowChat(!showChat)}
-              className={`flex items-center gap-2 px-4 py-1.5 rounded-full border text-xs font-medium transition-colors ${showChat ? 'bg-amber-500/10 border-amber-500/40 text-amber-400' : 'bg-neutral-900/50 border-white/[0.08] text-neutral-400 hover:border-amber-500/30 hover:text-amber-400'}`}
+              className={`flex items-center gap-2 px-4 py-1.5 rounded-full border text-xs font-medium transition-colors ${showChat ? 'bg-indigo-500/10 border-indigo-500/40 text-indigo-400' : 'bg-neutral-900/50 border-white/[0.08] text-neutral-400 hover:border-indigo-500/30 hover:text-indigo-400'}`}
             >
               <Sparkles className="w-3.5 h-3.5" />
               {showChat ? 'Assistant Open' : 'AI Assistant'}
             </button>
 
-            <div className={`px-4 py-1.5 rounded-full border text-xs font-medium flex items-center gap-2 ${status === 'processing' ? 'bg-amber-500/10 border-amber-500/30 text-amber-400' :
+            <div className={`px-4 py-1.5 rounded-full border text-xs font-medium flex items-center gap-2 ${status === 'processing' ? 'bg-indigo-500/10 border-indigo-500/30 text-indigo-400' :
                 status === 'success' ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' :
                   status === 'error' ? 'bg-red-500/10 border-red-500/30 text-red-400' :
                     'bg-neutral-900/50 border-white/[0.08] text-neutral-400'
               }`}>
-              <div className={`w-1.5 h-1.5 rounded-full ${status === 'processing' ? 'bg-amber-400 animate-ping' : status === 'success' ? 'bg-emerald-400' : status === 'error' ? 'bg-red-400' : 'bg-neutral-500'}`} />
+              <div className={`w-1.5 h-1.5 rounded-full ${status === 'processing' ? 'bg-indigo-400 animate-ping' : status === 'success' ? 'bg-emerald-400' : status === 'error' ? 'bg-red-400' : 'bg-neutral-500'}`} />
               {status === 'idle' ? 'Ready' : status.charAt(0).toUpperCase() + status.slice(1)}
             </div>
           </div>
@@ -332,12 +332,12 @@ export default function RecoGSTR2BZoho() {
           <Card>
             <div className="flex items-center justify-between mb-5">
               <div className="flex items-center gap-2">
-                <div className="w-5 h-5 rounded flex items-center justify-center bg-amber-500/15 text-amber-400 text-xs font-semibold">1</div>
+                <div className="w-5 h-5 rounded flex items-center justify-center bg-indigo-500/15 text-indigo-400 text-xs font-semibold">1</div>
                 <h3 className="text-sm font-semibold text-neutral-200 uppercase tracking-wider">Source Files</h3>
               </div>
               <div className="relative group cursor-pointer w-40">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <Calendar className="w-4 h-4 text-neutral-500 group-hover:text-amber-400 transition-colors" />
+                  <Calendar className="w-4 h-4 text-neutral-500 group-hover:text-indigo-400 transition-colors" />
                 </div>
                 <input
                   type="month"
@@ -345,7 +345,7 @@ export default function RecoGSTR2BZoho() {
                   value={inputs.month}
                   onChange={handleInputChange}
                   onClick={(e) => { try { e.target.showPicker() } catch (e) { } }}
-                  className="bg-black/20 border border-white/[0.08] text-neutral-300 text-xs font-mono rounded-lg py-2 pl-10 pr-3 w-full focus:outline-none focus:border-amber-500/50 hover:border-white/[0.14] transition-colors cursor-pointer uppercase"
+                  className="bg-black/20 border border-white/[0.08] text-neutral-300 text-xs font-mono rounded-lg py-2 pl-10 pr-3 w-full focus:outline-none focus:border-indigo-500/50 hover:border-white/[0.14] transition-colors cursor-pointer uppercase"
                 />
               </div>
             </div>
@@ -370,7 +370,7 @@ export default function RecoGSTR2BZoho() {
 
           <Card>
             <div className="flex items-center gap-2 mb-6">
-              <div className="w-5 h-5 rounded flex items-center justify-center bg-amber-500/15 text-amber-400 text-xs font-semibold">2</div>
+              <div className="w-5 h-5 rounded flex items-center justify-center bg-indigo-500/15 text-indigo-400 text-xs font-semibold">2</div>
               <h3 className="text-sm font-semibold text-neutral-200 uppercase tracking-wider">Manual Adjustments</h3>
               <div className="h-px flex-1 bg-white/[0.06] ml-4" />
             </div>
@@ -378,7 +378,7 @@ export default function RecoGSTR2BZoho() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6">
               <div className="space-y-3">
                 <div className="flex items-center gap-2 mb-1">
-                  <TrendingUp className="w-3 h-3 text-amber-400" />
+                  <TrendingUp className="w-3 h-3 text-indigo-400" />
                   <span className="text-[10px] font-semibold text-neutral-500 uppercase tracking-widest">Outward Supplies</span>
                 </div>
                 <div className="space-y-2">
@@ -393,7 +393,7 @@ export default function RecoGSTR2BZoho() {
 
               <div className="space-y-3">
                 <div className="flex items-center gap-2 mb-1">
-                  <Wallet className="w-3 h-3 text-amber-400" />
+                  <Wallet className="w-3 h-3 text-indigo-400" />
                   <span className="text-[10px] font-semibold text-neutral-500 uppercase tracking-widest">Opening ITC</span>
                 </div>
                 <div className="space-y-2">
@@ -425,10 +425,10 @@ export default function RecoGSTR2BZoho() {
             </Button>
           </div>
 
-          <div className="flex-1 bg-black/40 rounded-xl border border-white/[0.06] overflow-hidden flex flex-col min-h-[300px]">
+          <div className="flex-1 bg-black/40 rounded-lg border border-white/[0.06] overflow-hidden flex flex-col min-h-[300px]">
             <div className="px-4 py-2 bg-black/20 border-b border-white/[0.06] flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <TerminalIcon className="w-3 h-3 text-amber-400" />
+                <TerminalIcon className="w-3 h-3 text-indigo-400" />
                 <span className="text-[10px] font-mono text-neutral-500 uppercase tracking-widest">Activity Log</span>
               </div>
             </div>
@@ -459,16 +459,16 @@ export default function RecoGSTR2BZoho() {
                 <button
                   onClick={handleGenerateSummary}
                   disabled={isSummarizing}
-                  className="w-full flex items-center justify-center gap-2 py-3 rounded-xl border border-amber-500/30 bg-amber-500/5 hover:bg-amber-500/10 text-amber-400 text-xs font-semibold transition-colors"
+                  className="w-full flex items-center justify-center gap-2 py-3 rounded-lg border border-indigo-500/30 bg-indigo-500/5 hover:bg-indigo-500/10 text-indigo-400 text-xs font-semibold transition-colors"
                 >
                   {isSummarizing ? <Loader className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
                   {isSummarizing ? 'Generating summary…' : 'Generate AI Executive Summary'}
                 </button>
               ) : (
-                <div className="p-4 bg-neutral-900/60 border border-white/[0.08] rounded-xl relative overflow-hidden animate-in fade-in duration-500">
-                  <div className="absolute top-0 left-0 w-full h-1 bg-amber-500" />
+                <div className="p-4 bg-neutral-900/60 border border-white/[0.08] rounded-lg relative overflow-hidden animate-in fade-in duration-500">
+                  <div className="absolute top-0 left-0 w-full h-1 bg-indigo-500" />
                   <div className="flex items-center gap-2 mb-2">
-                    <Bot className="w-4 h-4 text-amber-400" />
+                    <Bot className="w-4 h-4 text-indigo-400" />
                     <h4 className="text-xs font-semibold text-neutral-100 uppercase tracking-wider">AI Executive Summary</h4>
                   </div>
                   <p className="text-[10px] md:text-xs text-neutral-300 leading-relaxed whitespace-pre-wrap">
@@ -480,7 +480,7 @@ export default function RecoGSTR2BZoho() {
               <a
                 href={downloadUrl}
                 download={`Zoho_Reco_${new Date().toISOString().slice(0, 10)}.xlsx`}
-                className="group w-full flex items-center justify-between p-1 pl-4 pr-1 bg-emerald-500/5 border border-emerald-500/20 hover:border-emerald-400/40 rounded-xl transition-colors"
+                className="group w-full flex items-center justify-between p-1 pl-4 pr-1 bg-emerald-500/5 border border-emerald-500/20 hover:border-emerald-400/40 rounded-lg transition-colors"
               >
                 <div className="flex flex-col">
                   <span className="text-[10px] font-semibold text-emerald-400 uppercase tracking-wider">Report Ready</span>
@@ -496,13 +496,13 @@ export default function RecoGSTR2BZoho() {
 
         {showSettings && (
           <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 backdrop-blur-sm animate-in fade-in duration-300 p-4">
-            <div className="w-full max-w-md bg-neutral-900 border border-white/[0.08] rounded-2xl shadow-2xl p-6 relative overflow-hidden">
-              <div className="absolute top-0 left-0 w-full h-1 bg-amber-500" />
+            <div className="w-full max-w-md bg-neutral-900 border border-white/[0.08] rounded-lg shadow-2xl p-6 relative overflow-hidden">
+              <div className="absolute top-0 left-0 w-full h-1 bg-indigo-500" />
 
               <div className="flex items-center justify-between mb-6">
                 <div className="flex items-center gap-3">
-                  <div className="p-2 bg-amber-500/10 rounded-lg border border-amber-500/20">
-                    <Settings className="w-5 h-5 text-amber-400" />
+                  <div className="p-2 bg-indigo-500/10 rounded-lg border border-indigo-500/20">
+                    <Settings className="w-5 h-5 text-indigo-400" />
                   </div>
                   <div>
                     <h3 className="text-sm font-semibold text-neutral-100">AI Assistant Settings</h3>
@@ -526,7 +526,7 @@ export default function RecoGSTR2BZoho() {
                       value={userApiKey}
                       onChange={(e) => setUserApiKey(e.target.value)}
                       placeholder="Paste Gemini API key here…"
-                      className="w-full bg-black/30 border border-white/[0.08] rounded-xl pl-10 pr-4 py-3 text-xs text-neutral-100 placeholder-neutral-700 focus:border-amber-500/50 focus:ring-2 focus:ring-amber-500/20 outline-none font-mono transition-colors"
+                      className="w-full bg-black/30 border border-white/[0.08] rounded-lg pl-10 pr-4 py-3 text-xs text-neutral-100 placeholder-neutral-700 focus:border-indigo-500/50 focus:ring-2 focus:ring-indigo-500/20 outline-none font-mono transition-colors"
                     />
                   </div>
                   <p className="text-[10px] text-neutral-600 pl-1">
@@ -537,7 +537,7 @@ export default function RecoGSTR2BZoho() {
                 <Button onClick={handleSaveSettings} icon={CheckCircle} className="w-full">Save Key</Button>
 
                 <div className="text-center pt-2">
-                  <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer" className="text-[10px] text-neutral-500 hover:text-amber-400 underline decoration-neutral-700 underline-offset-4 transition-colors">
+                  <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer" className="text-[10px] text-neutral-500 hover:text-indigo-400 underline decoration-neutral-700 underline-offset-4 transition-colors">
                     Get a key from Google AI Studio
                   </a>
                 </div>
@@ -551,7 +551,7 @@ export default function RecoGSTR2BZoho() {
             <div className="w-full h-full bg-neutral-950/95 backdrop-blur-xl border-l border-white/[0.08] flex flex-col">
               <div className="p-4 border-b border-white/[0.06] flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <Sparkles className="w-4 h-4 text-amber-400" />
+                  <Sparkles className="w-4 h-4 text-indigo-400" />
                   <span className="text-sm font-semibold text-neutral-100">Tax Assistant</span>
                 </div>
                 <button onClick={() => setShowChat(false)} className="text-neutral-500 hover:text-neutral-200">
@@ -562,8 +562,8 @@ export default function RecoGSTR2BZoho() {
               <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
                 {chatMessages.map((msg, idx) => (
                   <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                    <div className={`max-w-[85%] p-3 rounded-xl text-xs leading-relaxed ${msg.role === 'user'
-                        ? 'bg-amber-500/10 border border-amber-500/20 text-amber-100 rounded-tr-sm'
+                    <div className={`max-w-[85%] p-3 rounded-lg text-xs leading-relaxed ${msg.role === 'user'
+                        ? 'bg-indigo-500/10 border border-indigo-500/20 text-indigo-100 rounded-tr-sm'
                         : 'bg-neutral-800/60 border border-white/[0.06] text-neutral-300 rounded-tl-sm'
                       }`}>
                       {msg.text}
@@ -572,7 +572,7 @@ export default function RecoGSTR2BZoho() {
                 ))}
                 {isChatLoading && (
                   <div className="flex justify-start">
-                    <div className="bg-neutral-800/60 border border-white/[0.06] p-3 rounded-xl rounded-tl-sm">
+                    <div className="bg-neutral-800/60 border border-white/[0.06] p-3 rounded-lg rounded-tl-sm">
                       <div className="flex gap-1">
                         <div className="w-1.5 h-1.5 bg-neutral-500 rounded-full animate-bounce" />
                         <div className="w-1.5 h-1.5 bg-neutral-500 rounded-full animate-bounce delay-100" />
@@ -591,12 +591,12 @@ export default function RecoGSTR2BZoho() {
                     value={chatInput}
                     onChange={(e) => setChatInput(e.target.value)}
                     placeholder="Ask a question…"
-                    className="w-full bg-black/30 border border-white/[0.08] rounded-xl pl-4 pr-10 py-3 text-xs text-neutral-100 placeholder-neutral-600 focus:outline-none focus:border-amber-500/60 focus:ring-2 focus:ring-amber-500/20 transition-colors"
+                    className="w-full bg-black/30 border border-white/[0.08] rounded-lg pl-4 pr-10 py-3 text-xs text-neutral-100 placeholder-neutral-600 focus:outline-none focus:border-indigo-500/60 focus:ring-2 focus:ring-indigo-500/20 transition-colors"
                   />
                   <button
                     type="submit"
                     disabled={!chatInput.trim() || isChatLoading}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-neutral-400 hover:text-amber-400 disabled:opacity-50 transition-colors"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-neutral-400 hover:text-indigo-400 disabled:opacity-50 transition-colors"
                   >
                     <SendIcon className="w-4 h-4" />
                   </button>

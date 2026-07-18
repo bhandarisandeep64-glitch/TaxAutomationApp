@@ -47,27 +47,26 @@ export default function Login({ onLogin }) {
   };
 
   return (
-    <div className="relative min-h-screen w-full bg-neutral-950 flex items-center justify-center overflow-hidden font-sans selection:bg-amber-500/20 selection:text-amber-100">
+    <div className="relative min-h-screen w-full bg-neutral-950 flex items-center justify-center overflow-hidden font-sans selection:bg-indigo-500/20 selection:text-indigo-100">
 
-      {/* Ambient backdrop -- restrained, not theatrical */}
+      {/* Ambient backdrop -- a plain, precise grid; no colored glow */}
       <div className="absolute inset-0 pointer-events-none">
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_rgba(255,255,255,0.03),_transparent_60%)]" />
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[900px] h-[500px] bg-green-950/20 blur-[160px] rounded-full" />
-        <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.015)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.015)_1px,transparent_1px)] bg-[size:56px_56px]" />
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_rgba(255,255,255,0.025),_transparent_60%)]" />
+        <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.02)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.02)_1px,transparent_1px)] bg-[size:56px_56px]" />
       </div>
 
       <div className="relative z-10 w-full max-w-[420px] mx-4">
-        <div className="rounded-2xl border border-white/[0.07] bg-neutral-900/70 backdrop-blur-2xl shadow-2xl shadow-black/60 p-8 md:p-10">
+        <div className="rounded-lg border border-white/[0.08] bg-neutral-900 shadow-lg shadow-black/30 p-8 md:p-10">
 
           {/* Brand */}
           <div className="flex flex-col items-center mb-9 space-y-4">
-            <div className="w-14 h-14 rounded-2xl bg-neutral-950 border border-green-900/40 flex items-center justify-center shadow-[0_0_24px_rgba(20,83,45,0.2)]">
+            <div className="w-14 h-14 rounded-lg bg-neutral-950 border border-green-900/40 flex items-center justify-center shadow-[0_0_24px_rgba(20,83,45,0.2)]">
               <PeepalLeaf className="w-6 h-6 text-green-800" strokeWidth={1.5} />
             </div>
             <div className="text-center">
               <h1 className="text-xl font-semibold text-neutral-50 tracking-[0.08em]">BG CORP GLOBAL</h1>
               <div className="flex items-center justify-center gap-1.5 mt-1.5">
-                <ShieldCheck className="w-3 h-3 text-amber-500/70" />
+                <ShieldCheck className="w-3 h-3 text-indigo-400/80" />
                 <p className="text-[10px] font-medium text-neutral-500 uppercase tracking-[0.2em]">Client Workspace</p>
               </div>
             </div>
@@ -81,7 +80,7 @@ export default function Login({ onLogin }) {
                   <User className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-neutral-600" />
                   <input
                     type="text"
-                    className="block w-full pl-10 pr-4 py-3 bg-black/30 border border-white/[0.08] rounded-xl text-sm text-neutral-100 placeholder-neutral-600 focus:outline-none focus:border-amber-500/60 focus:ring-2 focus:ring-amber-500/20 transition-colors"
+                    className="block w-full pl-10 pr-4 py-3 bg-black/30 border border-white/[0.08] rounded-md text-sm text-neutral-100 placeholder-neutral-600 focus:outline-none focus:border-indigo-500/60 focus:ring-2 focus:ring-indigo-500/20 transition-colors"
                     placeholder="Enter your username"
                     value={formData.username}
                     onChange={(e) => setFormData({ ...formData, username: e.target.value })}
@@ -95,7 +94,7 @@ export default function Login({ onLogin }) {
                   <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-neutral-600" />
                   <input
                     type="password"
-                    className="block w-full pl-10 pr-4 py-3 bg-black/30 border border-white/[0.08] rounded-xl text-sm text-neutral-100 placeholder-neutral-600 focus:outline-none focus:border-amber-500/60 focus:ring-2 focus:ring-amber-500/20 transition-colors"
+                    className="block w-full pl-10 pr-4 py-3 bg-black/30 border border-white/[0.08] rounded-md text-sm text-neutral-100 placeholder-neutral-600 focus:outline-none focus:border-indigo-500/60 focus:ring-2 focus:ring-indigo-500/20 transition-colors"
                     placeholder="••••••••••••"
                     value={formData.password}
                     onChange={(e) => setFormData({ ...formData, password: e.target.value })}
@@ -104,7 +103,7 @@ export default function Login({ onLogin }) {
               </div>
 
               {error && (
-                <div className="flex items-center gap-2.5 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-xs">
+                <div className="flex items-center gap-2.5 p-3 rounded-md bg-red-500/10 border border-red-500/20 text-red-400 text-xs">
                   <AlertCircle className="w-4 h-4 shrink-0" />
                   {error}
                 </div>
@@ -113,14 +112,14 @@ export default function Login({ onLogin }) {
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full py-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-neutral-950 text-sm font-semibold transition-colors disabled:opacity-60 disabled:cursor-not-allowed shadow-lg shadow-amber-500/10"
+                className="w-full py-3 rounded-md bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold transition-colors disabled:opacity-60 disabled:cursor-not-allowed shadow-sm"
               >
                 {loading ? 'Signing in…' : 'Sign In'}
               </button>
             </form>
           ) : (
             <div className="space-y-6">
-              <div className="bg-red-500/5 border border-red-500/20 p-5 rounded-xl flex flex-col items-center text-center gap-3">
+              <div className="bg-red-500/5 border border-red-500/20 p-5 rounded-md flex flex-col items-center text-center gap-3">
                 <div className="w-11 h-11 rounded-full bg-red-500/10 flex items-center justify-center">
                   <Lock className="w-5 h-5 text-red-500" />
                 </div>
@@ -137,20 +136,20 @@ export default function Login({ onLogin }) {
                     <textarea
                       value={requestReason}
                       onChange={(e) => setRequestReason(e.target.value)}
-                      className="w-full h-24 bg-black/30 border border-white/[0.08] rounded-xl p-3 text-sm text-neutral-100 focus:outline-none focus:border-amber-500/60 focus:ring-2 focus:ring-amber-500/20 resize-none transition-colors"
+                      className="w-full h-24 bg-black/30 border border-white/[0.08] rounded-md p-3 text-sm text-neutral-100 focus:outline-none focus:border-indigo-500/60 focus:ring-2 focus:ring-indigo-500/20 resize-none transition-colors"
                       placeholder="Briefly explain why you need access…"
                     />
                   </div>
                   <div className="flex gap-3">
                     <button
                       onClick={() => setIsRestricted(false)}
-                      className="flex-1 py-2.5 rounded-xl border border-white/[0.08] text-neutral-400 hover:text-neutral-100 hover:bg-white/[0.04] transition-colors text-xs font-medium"
+                      className="flex-1 py-2.5 rounded-md border border-white/[0.08] text-neutral-400 hover:text-neutral-100 hover:bg-white/[0.04] transition-colors text-xs font-medium"
                     >
                       Cancel
                     </button>
                     <button
                       onClick={handleSendRequest}
-                      className="flex-[2] py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-neutral-950 text-xs font-semibold flex items-center justify-center gap-2 transition-colors"
+                      className="flex-[2] py-2.5 rounded-md bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold flex items-center justify-center gap-2 transition-colors"
                     >
                       <Send className="w-3.5 h-3.5" /> Send Request
                     </button>

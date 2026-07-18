@@ -57,13 +57,13 @@ export default function ChatWidget({ user, onClose }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="bg-neutral-900/90 backdrop-blur-md w-full max-w-lg h-[600px] flex flex-col rounded-2xl border border-white/[0.08] shadow-2xl">
+      <div className="bg-neutral-900 w-full max-w-lg h-[600px] flex flex-col rounded-lg border border-white/[0.08] shadow-lg">
 
         {/* Header */}
         <div className="flex justify-between items-center p-4 border-b border-white/[0.06]">
           <div className="flex items-center gap-2.5">
             <div className="relative">
-              <MessageSquare className="w-5 h-5 text-amber-400" />
+              <MessageSquare className="w-5 h-5 text-indigo-400" />
               <span className="absolute -top-1 -right-1 w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></span>
             </div>
             <h3 className="text-sm font-semibold text-neutral-100">
@@ -78,7 +78,7 @@ export default function ChatWidget({ user, onClose }) {
           {loading ? <p className="text-neutral-600 text-sm text-center mt-10">Connecting…</p> :
             messages.length === 0 ? <p className="text-neutral-600 text-sm text-center mt-10">No messages yet.</p> :
               messages.map(m => (
-                <div key={m.id} className={`relative p-4 rounded-xl border transition-colors ${
+                <div key={m.id} className={`relative p-4 rounded-md border transition-colors ${
                   m.type === 'access_request' ? 'bg-red-500/[0.04] border-red-500/20' :
                   m.type === 'system' ? 'bg-black/20 border-white/[0.05] text-center' :
                   'bg-black/20 border-white/[0.06]'
@@ -90,7 +90,7 @@ export default function ChatWidget({ user, onClose }) {
                       <div className="flex justify-between items-start mb-2">
                         <div className="flex items-center gap-2">
                           {m.type === 'access_request' && <ShieldAlert className="w-3.5 h-3.5 text-red-400" />}
-                          <span className={`text-sm font-semibold ${m.type === 'access_request' ? 'text-red-400' : 'text-amber-400'}`}>
+                          <span className={`text-sm font-semibold ${m.type === 'access_request' ? 'text-red-400' : 'text-indigo-400'}`}>
                             {m.username}
                           </span>
                         </div>
@@ -125,13 +125,13 @@ export default function ChatWidget({ user, onClose }) {
         <div className="p-4 border-t border-white/[0.06]">
           <div className="flex gap-2">
             <input
-              className="flex-1 bg-black/30 border border-white/[0.08] rounded-xl px-4 py-3 text-neutral-100 text-sm focus:outline-none focus:border-amber-500/60 focus:ring-2 focus:ring-amber-500/20 transition-colors placeholder-neutral-600"
+              className="flex-1 bg-black/30 border border-white/[0.08] rounded-md px-4 py-3 text-neutral-100 text-sm focus:outline-none focus:border-indigo-500/60 focus:ring-2 focus:ring-indigo-500/20 transition-colors placeholder-neutral-600"
               placeholder="Type a message…"
               value={msg}
               onChange={e => setMsg(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && handleSend()}
             />
-            <button onClick={handleSend} className="p-3 bg-amber-500 hover:bg-amber-400 text-neutral-950 rounded-xl transition-transform active:scale-95">
+            <button onClick={handleSend} className="p-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-md transition-transform active:scale-95">
               <Send className="w-4 h-4" />
             </button>
           </div>

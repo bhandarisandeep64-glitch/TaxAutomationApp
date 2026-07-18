@@ -111,11 +111,11 @@ export default function Gstr3bOdoo() {
 
       <Card>
         <h3 className="text-sm font-semibold text-neutral-200 mb-4 flex items-center gap-2">
-          <span className="w-6 h-6 rounded bg-amber-500/15 text-amber-400 flex items-center justify-center text-xs">1</span>
+          <span className="w-6 h-6 rounded bg-indigo-500/15 text-indigo-400 flex items-center justify-center text-xs">1</span>
           Client &amp; Period
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="flex items-center gap-3 px-4 py-3 rounded-xl border border-white/[0.08] bg-black/30 focus-within:border-amber-500/60 focus-within:ring-2 focus-within:ring-amber-500/20 transition-colors">
+          <div className="flex items-center gap-3 px-4 py-3 rounded-lg border border-white/[0.08] bg-black/30 focus-within:border-indigo-500/60 focus-within:ring-2 focus-within:ring-indigo-500/20 transition-colors">
             <input
               type="text"
               placeholder="Client Name"
@@ -133,7 +133,7 @@ export default function Gstr3bOdoo() {
               value={period}
               onChange={(e) => setPeriod(e.target.value)}
               onClick={(e) => { try { e.target.showPicker() } catch (err) { } }}
-              className="w-full bg-black/30 border border-white/[0.08] text-neutral-100 text-sm rounded-xl py-3 pl-11 pr-4 focus:outline-none focus:border-amber-500/60 focus:ring-2 focus:ring-amber-500/20 transition-colors cursor-pointer"
+              className="w-full bg-black/30 border border-white/[0.08] text-neutral-100 text-sm rounded-lg py-3 pl-11 pr-4 focus:outline-none focus:border-indigo-500/60 focus:ring-2 focus:ring-indigo-500/20 transition-colors cursor-pointer"
             />
           </div>
         </div>
@@ -168,19 +168,19 @@ export default function Gstr3bOdoo() {
           <Card>
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-sm font-semibold text-neutral-200 flex items-center gap-2">
-                <span className="w-6 h-6 rounded bg-amber-500/15 text-amber-400 flex items-center justify-center text-xs">2</span>
+                <span className="w-6 h-6 rounded bg-indigo-500/15 text-indigo-400 flex items-center justify-center text-xs">2</span>
                 GSTR-1 Sales Data
               </h3>
               <div className="flex items-center gap-1 p-1 rounded-lg border border-white/[0.08] bg-black/20">
                 <button
                   onClick={() => setGstr1Mode('upload')}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${gstr1Mode === 'upload' ? 'bg-amber-500 text-neutral-950' : 'text-neutral-500 hover:text-neutral-200'}`}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${gstr1Mode === 'upload' ? 'bg-indigo-600 text-white' : 'text-neutral-500 hover:text-neutral-200'}`}
                 >
                   <FileUp className="w-3.5 h-3.5" /> Upload Files
                 </button>
                 <button
                   onClick={() => setGstr1Mode('manual')}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${gstr1Mode === 'manual' ? 'bg-amber-500 text-neutral-950' : 'text-neutral-500 hover:text-neutral-200'}`}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${gstr1Mode === 'manual' ? 'bg-indigo-600 text-white' : 'text-neutral-500 hover:text-neutral-200'}`}
                 >
                   <Keyboard className="w-3.5 h-3.5" /> Enter Manually
                 </button>
@@ -220,7 +220,7 @@ export default function Gstr3bOdoo() {
                                 placeholder="0.00"
                                 value={manualGstr1[cat][field]}
                                 onChange={handleManualGstr1Change(cat, field)}
-                                className="w-full bg-black/30 border border-white/[0.08] rounded-lg px-2 py-1.5 text-right text-sm text-neutral-100 outline-none focus:border-amber-500/60 focus:ring-2 focus:ring-amber-500/20 transition-colors placeholder-neutral-700"
+                                className="w-full bg-black/30 border border-white/[0.08] rounded-lg px-2 py-1.5 text-right text-sm text-neutral-100 outline-none focus:border-indigo-500/60 focus:ring-2 focus:ring-indigo-500/20 transition-colors placeholder-neutral-700"
                               />
                             </td>
                           ))}
@@ -235,11 +235,11 @@ export default function Gstr3bOdoo() {
 
           <Card>
             <h3 className="text-sm font-semibold text-neutral-200 mb-4 flex items-center gap-2">
-              <span className="w-6 h-6 rounded bg-amber-500/15 text-amber-400 flex items-center justify-center text-xs">3</span>
+              <span className="w-6 h-6 rounded bg-indigo-500/15 text-indigo-400 flex items-center justify-center text-xs">3</span>
               GSTR-2B Portal Data
             </h3>
             {!portalFile ? (
-              <label className="flex flex-col items-center justify-center w-full h-24 border-2 border-dashed border-white/[0.1] rounded-lg cursor-pointer hover:bg-white/[0.02] hover:border-amber-500/40 transition-colors group">
+              <label className="flex flex-col items-center justify-center w-full h-24 border-2 border-dashed border-white/[0.1] rounded-lg cursor-pointer hover:bg-white/[0.02] hover:border-indigo-500/40 transition-colors group">
                 <div className="flex items-center gap-3 text-neutral-500 group-hover:text-neutral-200">
                   <Upload className="w-5 h-5" />
                   <span className="text-sm font-medium">Upload GSTR-2B Excel</span>
@@ -247,9 +247,9 @@ export default function Gstr3bOdoo() {
                 <input type="file" className="hidden" accept=".xlsx, .xls" onChange={(e) => e.target.files[0] && setPortalFile(e.target.files[0])} />
               </label>
             ) : (
-              <div className="flex items-center justify-between p-3 bg-amber-500/10 border border-amber-500/20 rounded-lg">
+              <div className="flex items-center justify-between p-3 bg-indigo-500/10 border border-indigo-500/20 rounded-lg">
                 <div className="flex items-center gap-3">
-                  <FileText className="w-5 h-5 text-amber-400" />
+                  <FileText className="w-5 h-5 text-indigo-400" />
                   <span className="text-sm font-medium text-neutral-200 truncate max-w-[250px]">{portalFile.name}</span>
                 </div>
                 <button onClick={() => setPortalFile(null)} className="text-neutral-500 hover:text-red-400"><X className="w-4 h-4" /></button>
@@ -259,7 +259,7 @@ export default function Gstr3bOdoo() {
 
           <Card>
             <h3 className="text-sm font-semibold text-neutral-200 mb-4 flex items-center gap-2">
-              <span className="w-6 h-6 rounded bg-amber-500/15 text-amber-400 flex items-center justify-center text-xs">4</span>
+              <span className="w-6 h-6 rounded bg-indigo-500/15 text-indigo-400 flex items-center justify-center text-xs">4</span>
               GSTR-2B Odoo Purchase Registers
             </h3>
             <div className="grid grid-cols-2 gap-4">
@@ -285,7 +285,7 @@ export default function Gstr3bOdoo() {
           </div>
 
           {status === 'success' && downloadUrl && (
-            <div className="animate-in slide-in-from-bottom-4 duration-500 p-4 bg-emerald-500/5 border border-emerald-500/20 rounded-xl">
+            <div className="animate-in slide-in-from-bottom-4 duration-500 p-4 bg-emerald-500/5 border border-emerald-500/20 rounded-lg">
               <h4 className="text-emerald-400 font-semibold text-sm mb-1 flex items-center gap-2">
                 <CheckCircle className="w-4 h-4" /> Working Paper Ready
               </h4>
@@ -293,7 +293,7 @@ export default function Gstr3bOdoo() {
               <a
                 href={downloadUrl}
                 download={`${clientName || 'Client'} GSTR3B ${period}.xlsx`}
-                className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-amber-500 hover:bg-amber-400 text-neutral-950 text-xs font-semibold rounded-lg transition-colors"
+                className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold rounded-lg transition-colors"
               >
                 <Download className="w-3 h-3" /> Download
               </a>
