@@ -146,7 +146,7 @@ const [user, setUser] = useState(() => {
       {/* --- GLOBAL BACKGROUND: restrained, corporate --- */}
       <div className="fixed inset-0 pointer-events-none z-0">
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_rgba(255,255,255,0.025),_transparent_55%)]" />
-        <div className="absolute bottom-0 right-0 w-[500px] h-[500px] bg-rose-950/10 blur-[150px] rounded-full" />
+        <div className="absolute bottom-0 right-0 w-[500px] h-[500px] bg-green-950/10 blur-[150px] rounded-full" />
       </div>
 
       {/* Sidebar is Z-10 to sit above background */}

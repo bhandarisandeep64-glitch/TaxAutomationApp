@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { User, Lock, Flower, Send, CheckCircle, ArrowLeft, AlertCircle, ShieldCheck } from 'lucide-react';
+import { User, Lock, Send, CheckCircle, ArrowLeft, AlertCircle, ShieldCheck } from 'lucide-react';
 import { apiFetch, setToken } from '../api/client';
+import PeepalLeaf from './icons/PeepalLeaf';
 
 export default function Login({ onLogin }) {
   const [formData, setFormData] = useState({ username: '', password: '' });
@@ -51,7 +52,7 @@ export default function Login({ onLogin }) {
       {/* Ambient backdrop -- restrained, not theatrical */}
       <div className="absolute inset-0 pointer-events-none">
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_rgba(255,255,255,0.03),_transparent_60%)]" />
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[900px] h-[500px] bg-rose-950/20 blur-[160px] rounded-full" />
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[900px] h-[500px] bg-green-950/20 blur-[160px] rounded-full" />
         <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.015)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.015)_1px,transparent_1px)] bg-[size:56px_56px]" />
       </div>
 
@@ -60,11 +61,11 @@ export default function Login({ onLogin }) {
 
           {/* Brand */}
           <div className="flex flex-col items-center mb-9 space-y-4">
-            <div className="w-14 h-14 rounded-2xl bg-neutral-950 border border-rose-900/40 flex items-center justify-center shadow-[0_0_24px_rgba(120,40,60,0.2)]">
-              <Flower className="w-6 h-6 text-rose-700" strokeWidth={1.5} />
+            <div className="w-14 h-14 rounded-2xl bg-neutral-950 border border-green-900/40 flex items-center justify-center shadow-[0_0_24px_rgba(20,83,45,0.2)]">
+              <PeepalLeaf className="w-6 h-6 text-green-800" strokeWidth={1.5} />
             </div>
             <div className="text-center">
-              <h1 className="text-xl font-semibold text-neutral-50 tracking-[0.08em]">BLACK ROSE</h1>
+              <h1 className="text-xl font-semibold text-neutral-50 tracking-[0.08em]">BG CORP GLOBAL</h1>
               <div className="flex items-center justify-center gap-1.5 mt-1.5">
                 <ShieldCheck className="w-3 h-3 text-amber-500/70" />
                 <p className="text-[10px] font-medium text-neutral-500 uppercase tracking-[0.2em]">Client Workspace</p>

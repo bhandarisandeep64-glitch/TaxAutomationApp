@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { FileText, CheckCircle, Users, LogOut, ChevronDown, ChevronRight, Lock, Landmark, Flower, TrendingUp } from 'lucide-react';
+import { FileText, CheckCircle, Users, LogOut, ChevronDown, ChevronRight, Lock, Landmark, TrendingUp } from 'lucide-react';
+import PeepalLeaf from './icons/PeepalLeaf';
 
 export default function Sidebar({ user, onNavigate, onLogout, currentModule, mobileMenuOpen }) {
   const [expandedMenus, setExpandedMenus] = useState({});
@@ -114,11 +115,11 @@ export default function Sidebar({ user, onNavigate, onLogout, currentModule, mob
 
       {/* Brand */}
       <div className="p-5 border-b border-white/[0.06] flex items-center gap-3 shrink-0">
-        <div className="w-8 h-8 rounded-lg bg-neutral-900 border border-rose-900/40 flex items-center justify-center">
-          <Flower className="w-4 h-4 text-rose-700" strokeWidth={1.5} />
+        <div className="w-8 h-8 rounded-lg bg-neutral-900 border border-green-900/40 flex items-center justify-center">
+          <PeepalLeaf className="w-4 h-4 text-green-800" strokeWidth={1.5} />
         </div>
-        <span className="font-semibold text-sm tracking-[0.1em] text-neutral-100 uppercase">
-          Black Rose <span className="text-amber-400">Inc.</span>
+        <span className="font-semibold text-base tracking-[0.15em] text-neutral-100 uppercase">
+          Origin
         </span>
       </div>
 

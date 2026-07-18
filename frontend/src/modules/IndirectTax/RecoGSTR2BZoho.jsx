@@ -31,7 +31,7 @@ export default function RecoGSTR2BZoho() {
   const [storedApiKey, setStoredApiKey] = useState('');
 
   const [chatMessages, setChatMessages] = useState([
-    { role: 'ai', text: 'Hi, I\'m the Black Rose Tax Assistant. Ask me about GST reconciliation or this report.' }
+    { role: 'ai', text: 'Hi, I\'m the Origin Tax Assistant. Ask me about GST reconciliation or this report.' }
   ]);
   const [chatInput, setChatInput] = useState('');
   const [isChatLoading, setIsChatLoading] = useState(false);
@@ -100,7 +100,7 @@ export default function RecoGSTR2BZoho() {
     setIsChatLoading(true);
 
     try {
-      const systemPrompt = "You are 'Black Rose AI', a professional, precise tax automation assistant. You help users with Indian GST (GSTR-2B, ITC) and Zoho Books reconciliation queries. Keep answers under 80 words unless detailed explanation is requested.";
+      const systemPrompt = "You are 'Origin AI', a professional, precise tax automation assistant. You help users with Indian GST (GSTR-2B, ITC) and Zoho Books reconciliation queries. Keep answers under 80 words unless detailed explanation is requested.";
       const aiResponse = await callGeminiAPI(userMsg, systemPrompt);
       setChatMessages(prev => [...prev, { role: 'ai', text: aiResponse }]);
     } catch (error) {

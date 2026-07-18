@@ -1,6 +1,6 @@
-// Corporate-premium design system.
+// Corporate-premium design system, for "Origin" (by BG Corp Global).
 // One consistent accent (champagne gold) drives every interactive element
-// across the whole app. The "Black Rose" wine tone is reserved for the brand
+// across the whole app. A deep peepal-leaf green is reserved for the brand
 // mark only (logo, login) so identity persists without bleeding into every
 // button, badge, and focus ring like it used to.
 
@@ -27,9 +27,9 @@ export const THEME = {
   borderAccent: "border-amber-500/30",
 
   // Brand mark only -- logo, login screen. Never used for buttons/nav/status.
-  brand: "text-rose-800",
-  brandSoft: "text-rose-900/70",
-  brandGlow: "shadow-[0_0_24px_rgba(120,40,60,0.25)]",
+  brand: "text-green-800",
+  brandSoft: "text-green-900/70",
+  brandGlow: "shadow-[0_0_24px_rgba(20,83,45,0.25)]",
 
   // Accent -- the one interactive signal used everywhere (buttons, active
   // nav, focus rings, highlighted totals)
