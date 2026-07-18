@@ -12,21 +12,33 @@ export default function ComplianceTable({ user }) {
   const [searchTerm, setSearchTerm] = useState("");
   const [isAdding, setIsAdding] = useState(false);
   const [saveStatus, setSaveStatus] = useState('saved');
+  const [saveError, setSaveError] = useState('');
+  const [loadError, setLoadError] = useState('');
 
   useEffect(() => {
     if (!user) return;
     setLoading(true);
+    setLoadError('');
     apiFetch(`/api/compliance?user_id=${user.id}`)
-      .then(res => res.json())
-      .then(data => {
+      .then(async (res) => {
+        const data = await res.json().catch(() => null);
+        if (!res.ok || !Array.isArray(data)) {
+          throw new Error((data && data.error) || `Failed to load clients (${res.status})`);
+        }
         setClients(data);
         setLoading(false);
       })
-      .catch(err => console.error("Failed to load data", err));
+      .catch(err => {
+        console.error("Failed to load data", err);
+        setLoadError(err.message || 'Failed to load clients.');
+        setLoading(false);
+      });
   }, [user]);
 
   const saveData = (updatedClients) => {
+    const previousClients = clients;
     setSaveStatus('saving');
+    setSaveError('');
     setClients(updatedClients);
 
     apiFetch('/api/compliance', {
@@ -36,9 +48,20 @@ export default function ComplianceTable({ user }) {
         clients: updatedClients
       })
     })
-      .then(res => res.json())
-      .then(() => setTimeout(() => setSaveStatus('saved'), 500))
-      .catch(() => setSaveStatus('error'));
+      .then(async (res) => {
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || data.success === false) {
+          throw new Error(data.error || `Save failed (${res.status})`);
+        }
+        setTimeout(() => setSaveStatus('saved'), 500);
+      })
+      .catch((err) => {
+        // Don't leave an unsaved client sitting in the table looking saved --
+        // revert to the last known-good server state.
+        setClients(previousClients);
+        setSaveStatus('error');
+        setSaveError(err.message || 'Failed to save.');
+      });
   };
 
   const toggleStatus = (id, field) => {
@@ -117,6 +140,12 @@ export default function ComplianceTable({ user }) {
         }
       />
 
+      {loadError && (
+        <div className="flex items-center gap-2.5 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
+          <AlertCircle className="w-4 h-4 shrink-0" /> {loadError}
+        </div>
+      )}
+
       {isAdding && (
         <div className="bg-neutral-900/60 border border-indigo-500/30 p-4 rounded-lg flex gap-4 animate-in slide-in-from-top-2">
           <input type="text" placeholder="Enter client name" autoFocus value={newClient} onChange={(e) => setNewClient(e.target.value)}
@@ -169,7 +198,7 @@ export default function ComplianceTable({ user }) {
       <div className="flex justify-end text-xs text-neutral-500 items-center gap-2">
         {saveStatus === 'saving' && <><RefreshCw className="w-3 h-3 animate-spin" /> Saving…</>}
         {saveStatus === 'saved' && <><Save className="w-3 h-3" /> Changes saved</>}
-        {saveStatus === 'error' && <span className="text-red-400">Failed to save — check your connection.</span>}
+        {saveStatus === 'error' && <span className="text-red-400">Failed to save{saveError ? `: ${saveError}` : ' — check your connection.'} (change was not kept — try again)</span>}
       </div>
     </div>
   );

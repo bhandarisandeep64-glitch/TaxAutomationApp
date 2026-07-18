@@ -300,7 +300,7 @@ def update_compliance():
         return jsonify({"error": "User ID is required"}), 400
 
     result = save_compliance_data(user_id, clients)
-    return jsonify(result)
+    return jsonify(result), (200 if result.get('success') else 500)
 
 # --- NOTES ---
 @app.route('/api/notes', methods=['GET'])
