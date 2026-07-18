@@ -74,11 +74,21 @@ def _parse_hsn_file(fp, base_category):
             df[col] = 0.0
         df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
 
-    is_cn = df['Debit'] != 0
+    # Primary signal: the B2B file's own 'GSTR Section' explicitly tags
+    # credit notes ("CDNR Regular") -- more reliable than Debit/Credit alone,
+    # confirmed against real data where one credit note had its amount
+    # posted to Credit instead of Debit (breaking a Debit-only check) but
+    # was still correctly labeled "CDNR Regular". Debit-populated is kept as
+    # a fallback for the B2C file, whose 'GSTR Section' is always "B2CS"
+    # (never distinguishes CDNR on its own).
+    section = df['GSTR Section'].astype(str).str.lower()
+    is_cn = section.str.contains('cdnr', na=False) | (df['Debit'] != 0)
     df['Nature'] = np.where(is_cn, f"{base_category} CDNR", base_category)
-    # Per-line taxable value -- Credit for a regular invoice line, Debit for
-    # a credit-note line (same sign convention Odoo has always used here).
-    df['Line_Taxable'] = np.where(is_cn, df['Debit'], df['Credit'])
+    # Per-line taxable value -- whichever of Debit/Credit is actually
+    # populated for that row (only one ever is), independent of the Nature
+    # tag above so a Debit/Credit swap like the one above can't also corrupt
+    # the amount.
+    df['Line_Taxable'] = np.where(df['Debit'] != 0, df['Debit'], df['Credit'])
     df['Rate'] = df['Taxes'].apply(_extract_rate)
     df['Is_IGST'] = df['Taxes'].apply(_is_igst)
 

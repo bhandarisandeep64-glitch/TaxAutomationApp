@@ -104,6 +104,38 @@ def test_b2c_credit_note_detected_without_gstr_section_tag():
     print("B2C credit-note detection via Debit column (no GSTR Section tag): OK")
 
 
+def test_credit_note_with_amount_in_credit_column_not_debit():
+    """Real-world bug found via a live client run: a credit note
+    (26-27/CN/00961, Gogari Interior Studio, taxable 3000) had its GSTR
+    Section correctly say "CDNR Regular" but its amount was posted to
+    Credit instead of Debit -- a Debit-only check misclassified it as a
+    regular B2B sale, shifting 3000 from B2B CDNR into B2B and causing the
+    filed return's Table 4A/9B totals to be off by exactly that amount.
+    GSTR Section must win regardless of which column the amount landed in."""
+    tmpdir = tempfile.mkdtemp()
+    df = pd.DataFrame([
+        {'GSTR Section': 'CDNR Regular', 'Partner': 'Gogari Interior Studio', 'GSTIN': '27DIHPG6381J1ZV',
+         'Date': '2026-06-19', 'HSN/SAC Code': 82055990, 'Number': '26-27/CN/00961',
+         'Taxes': '18% GST S', 'Taxable Amt.': 3000.0, 'Credit': 3000.0, 'Debit': 0.0},
+    ])
+    fp = _write(df, tmpdir, 'b2b_cn_quirk.xlsx')
+    final_df, summary, hsn_summary_df = compute_gstr1_data({'file_b2b': fp})
+
+    row = final_df.iloc[0]
+    assert row['Nature'] == 'B2B CDNR', f"expected B2B CDNR, got {row['Nature']}"
+    assert _approx(row['Taxable Amt.'], 3000.0)
+    assert _approx(row['CGST'], 270.0) and _approx(row['SGST'], 270.0)
+
+    cat = summary.set_index('Category')
+    assert _approx(cat.loc['B2B CDNR', 'Taxable'], 3000.0)
+    assert 'B2B' not in cat.index or _approx(cat.loc['B2B', 'Taxable'], 0.0)
+
+    hsn_row = hsn_summary_df[hsn_summary_df['HSN/SAC Code'] == 82055990].iloc[0]
+    assert _approx(hsn_row['Taxable Value'], -3000.0), hsn_row['Taxable Value']
+
+    print("Credit note with amount in Credit column (GSTR Section overrides Debit check): OK")
+
+
 def test_igst_vs_intrastate_split():
     tmpdir = tempfile.mkdtemp()
     df = pd.DataFrame([
@@ -180,6 +212,7 @@ def test_real_hsn_b2b_b2c_files():
 if __name__ == '__main__':
     test_b2b_regular_and_cdnr_with_mixed_rates()
     test_b2c_credit_note_detected_without_gstr_section_tag()
+    test_credit_note_with_amount_in_credit_column_not_debit()
     test_igst_vs_intrastate_split()
     test_hsn_summary_nets_credit_notes()
     test_real_hsn_b2b_b2c_files()
