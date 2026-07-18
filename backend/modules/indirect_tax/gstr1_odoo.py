@@ -4,224 +4,204 @@ import re
 import os
 from openpyxl.utils import get_column_letter
 
-def detect_file_type(df, filename):
-    """
-    Analyzes content to detect B2B/B2C and Tax Type.
-    (Category detection moved to row-level in process_file_core)
-    """
-    # 1. Detect Tax Type (IGST vs CGST)
-    tax = None
-    if 'Label' in df.columns:
-        label_str = df['Label'].astype(str).str.lower()
-        if label_str.str.contains('igst').any():
-            tax = 'IGST'
-        elif label_str.str.contains('cgst').any() or label_str.str.contains('sgst').any():
-            tax = 'CGST'
-            
-    if not tax:
-        if 'igst' in filename.lower(): tax = 'IGST'
-        elif 'cgst' in filename.lower() or 'sgst' in filename.lower(): tax = 'CGST'
-    
-    if not tax: tax = 'CGST' # Default
+# ==========================================
+#  HSN B2B / HSN B2C parser (current Odoo export format)
+# ==========================================
+#
+# Odoo now exports exactly two files -- "HSN B2B" and "HSN B2C" -- from the
+# account.move.line ("Journal Item") view. One row per line-item within an
+# invoice (an invoice with several HSN codes/products gets one row per
+# HSN/SAC code, all sharing the same invoice Number), rather than the old
+# per-tax-account ledger export.
+#
+# Columns actually used: GSTR Section, Partner, GSTIN, Date, HSN/SAC Code,
+# Number, Taxes (e.g. "18% GST S" / "18% IGST S" / "5% GST S"), Taxable Amt.
+# (an invoice-level total, repeated across that invoice's lines), Credit,
+# Debit.
+#
+# Verified against real exports (both files the firm shared):
+#   - Which file is B2B vs B2C has to come from the upload slot, not the
+#     data -- the B2C file's own GSTR Section column is always "B2CS", even
+#     for its credit notes, so it can't tell CDNR apart on its own.
+#   - Credit-note detection instead comes from the Debit column being
+#     populated instead of Credit -- this is consistent across both files.
+#   - Credit/Debit is the TAXABLE VALUE for that specific line (not the tax
+#     amount) -- confirmed against a real multi-line invoice where the line
+#     values summed to the invoice's own "Taxable Amt." total, not to 18%
+#     of it. Tax is computed here, not read from the file.
+#   - "Taxes" gives the rate and type as plain text: "IGST S" -> the whole
+#     tax is IGST; "GST S" -> the tax splits evenly into CGST/SGST.
+#   - An invoice can mix rates across its lines (e.g. some products at 18%,
+#     others at 5%), so tax is computed per LINE using that line's own rate,
+#     then summed per invoice -- not one rate applied to the invoice total.
+#   - The per-line sum can occasionally fall short of the file's own
+#     "Taxable Amt." column (observed on one real invoice, off by ~10k) --
+#     likely a line posted to an account outside this export. The per-line
+#     sum is used as the authoritative figure (it's what the tax
+#     calculation is actually built from); the file's own total is kept
+#     alongside as a reference column, and any material mismatch is logged
+#     rather than silently dropped.
 
-    # 2. Detect Invoice Type (B2B vs B2C)
-    inv_type = 'B2C' # Default
-    if 'GSTIN' in df.columns:
-        valid_gstins = df['GSTIN'].astype(str).replace(['nan', 'False', ''], np.nan).dropna()
-        if len(valid_gstins) > 0:
-            inv_type = 'B2B'
-    
-    if 'b2b' in filename.lower(): inv_type = 'B2B'
-    elif 'b2c' in filename.lower(): inv_type = 'B2C'
+RATE_RE = re.compile(r'(\d+(?:\.\d+)?)\s*%')
 
-    return inv_type, tax
 
-def process_file_core(df, filename, invoice_type, tax_type):
-    """
-    Core Logic:
-    - Row-by-Row detection of Credit Notes (fixes misclassification).
-    - Standardizes Tax and Amounts.
-    """
-    try:
-        # Basic Clean
-        for col in ['GSTIN', 'Number', 'Journal']:
-            if col in df.columns:
-                df[col] = df[col].astype(str).replace(['nan', 'False'], '').str.strip()
-            else:
-                df[col] = ''
+def _read_file(fp):
+    if str(fp).lower().endswith('.csv'):
+        return pd.read_csv(fp)
+    return pd.read_excel(fp)
 
-        # --- LOGIC 1: Detect Nature (Invoice vs CDNR) Row-by-Row ---
-        # This fixes the issue where whole files were wrongly marked as CDNR
-        
-        is_cn_mask = pd.Series([False] * len(df))
-        
-        # Check Journal Column
-        if 'Journal' in df.columns:
-            is_cn_mask |= df['Journal'].str.contains('Credit Note|Reversal', case=False, regex=True)
-            
-        # Check Number Column (Common Odoo patterns: RINV, CN, etc.)
-        if 'Number' in df.columns:
-            is_cn_mask |= df['Number'].str.contains('RINV|CN|Credit', case=False, regex=True)
-            
-        # Fallback: If filename strongly implies Credit Note, apply to all (unless contradicted)
-        if 'credit' in filename.lower() or 'cdnr' in filename.lower() or 'reversal' in filename.lower():
-             # Only apply if we didn't find specific invoice markers? 
-             # Actually, safer to trust filename if column data is missing.
-             if not is_cn_mask.any(): 
-                 is_cn_mask[:] = True
 
-        # Assign Nature based on the mask
-        df['Nature'] = np.where(is_cn_mask, f"{invoice_type} CDNR", invoice_type)
+def _extract_rate(taxes_str):
+    m = RATE_RE.search(str(taxes_str or ''))
+    return float(m.group(1)) if m else 0.0
 
-        # --- LOGIC 2: Handle Debit/Credit ---
-        df['Abs_Tax_Amount'] = 0.0
-        if 'Debit' in df.columns and 'Credit' in df.columns:
-            df['Debit'] = pd.to_numeric(df['Debit'], errors='coerce').fillna(0)
-            df['Credit'] = pd.to_numeric(df['Credit'], errors='coerce').fillna(0)
-            
-            debit_mask = df['Debit'] != 0
-            credit_mask = df['Credit'] != 0
-            
-            df.loc[debit_mask, 'Abs_Tax_Amount'] = df.loc[debit_mask, 'Debit'].abs()
-            df.loc[credit_mask, 'Abs_Tax_Amount'] = df.loc[credit_mask, 'Credit'].abs()
-            
-            # Credit Notes usually appear in Debit column in Odoo Ledger, so we negate them for reporting
-            df.loc[debit_mask, 'Credit'] = df.loc[debit_mask, 'Debit'].abs() * -1
-        elif 'Credit' in df.columns:
-            df['Credit'] = pd.to_numeric(df['Credit'], errors='coerce').fillna(0)
-            df['Abs_Tax_Amount'] = df['Credit'].abs()
 
-        # --- LOGIC 3: Recalculate Taxable Value ---
-        if 'Label' in df.columns:
-            df['extracted_rate'] = df['Label'].astype(str).str.extract(r'(\d*\.?\d+)%').astype(float)
-            mask_valid = df['extracted_rate'] > 0
-            
-            # Taxable = Tax / (Rate/100)
-            df.loc[mask_valid, 'Taxable Amt.'] = (df.loc[mask_valid, 'Abs_Tax_Amount'] / (df.loc[mask_valid, 'extracted_rate'] / 100)).round(2)
-            
-            # Handle Negative Sign for Taxable Amount
-            # If it's a credit note row (determined by mask), value should likely be negative
-            # Or if Credit column is negative.
-            if 'Credit' in df.columns:
-                neg_mask = df['Credit'] < 0
-                df.loc[neg_mask, 'Taxable Amt.'] = df.loc[neg_mask, 'Taxable Amt.'].abs() * -1
+def _is_igst(taxes_str):
+    return 'igst' in str(taxes_str or '').lower()
 
-        # --- LOGIC 4: Tax Columns ---
-        df['IGST'] = 0.0
-        df['CGST'] = 0.0
-        df['SGST'] = 0.0
 
-        if tax_type == 'CGST':
-            df['CGST'] = df['Credit']
-            df['SGST'] = df['Credit']
-        elif tax_type == 'IGST':
-            df['IGST'] = df['Credit']
-        
-        if 'Date' in df.columns:
-            df['Date'] = pd.to_datetime(df['Date'], errors='coerce').dt.strftime('%d-%m-%Y')
-            
-        return df
+def _parse_hsn_file(fp, base_category):
+    """Returns a per-line DataFrame from one HSN B2B/B2C export, tagged with
+    Nature (base_category, or base_category + ' CDNR' for credit notes) and
+    the tax computed for that line (Line_IGST/Line_CGST/Line_SGST)."""
+    df = _read_file(fp)
 
-    except Exception as e:
-        print(f"Error inside core logic: {e}")
-        return pd.DataFrame()
+    for col in ['GSTIN', 'Partner', 'Number', 'Taxes', 'HSN/SAC Code', 'Date']:
+        if col not in df.columns:
+            df[col] = ''
+    for col in ['Taxable Amt.', 'Credit', 'Debit']:
+        if col not in df.columns:
+            df[col] = 0.0
+        df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+
+    is_cn = df['Debit'] != 0
+    df['Nature'] = np.where(is_cn, f"{base_category} CDNR", base_category)
+    # Per-line taxable value -- Credit for a regular invoice line, Debit for
+    # a credit-note line (same sign convention Odoo has always used here).
+    df['Line_Taxable'] = np.where(is_cn, df['Debit'], df['Credit'])
+    df['Rate'] = df['Taxes'].apply(_extract_rate)
+    df['Is_IGST'] = df['Taxes'].apply(_is_igst)
+
+    total_tax = (df['Line_Taxable'] * df['Rate'] / 100).round(2)
+    cgst = np.where(df['Is_IGST'], 0.0, (total_tax / 2).round(2))
+    df['Line_IGST'] = np.where(df['Is_IGST'], total_tax, 0.0)
+    df['Line_CGST'] = cgst
+    df['Line_SGST'] = np.where(df['Is_IGST'], 0.0, total_tax - cgst)
+
+    return df
+
+
+def _invoice_level(per_line_df):
+    """Collapses the per-line rows down to one row per invoice Number,
+    summing the per-line taxable/tax figures (correct even when an invoice
+    mixes tax rates across its lines) -- the file's own invoice-level
+    'Taxable Amt.' is kept alongside as a reference/reconciliation column,
+    not used for the calculation itself."""
+    grouped = per_line_df.groupby('Number', as_index=False).agg(
+        Nature=('Nature', 'first'), Partner=('Partner', 'first'),
+        GSTIN=('GSTIN', 'first'), Date=('Date', 'first'),
+        **{'HSN/SAC Code': ('HSN/SAC Code', 'first')},
+        **{'Taxable Amt. (Odoo Reference)': ('Taxable Amt.', 'first')},
+        **{'Taxable Amt.': ('Line_Taxable', 'sum')},
+        IGST=('Line_IGST', 'sum'), CGST=('Line_CGST', 'sum'), SGST=('Line_SGST', 'sum'),
+    )
+    return grouped
+
 
 def compute_gstr1_data(file_paths):
-    """Reads and processes the raw Odoo ledger exports, returning
-    (final_df, summary) with no file I/O -- used both by process_gstr1_odoo
-    (the standalone GSTR-1 tool) and by gstr3b_engine.py, which needs the
-    detail rows and category summary directly rather than re-parsing a
-    generated Excel file."""
-    processed_dfs = []
+    """file_paths: dict with optional 'file_b2b'/'file_b2c' keys pointing at
+    Odoo's HSN B2B / HSN B2C Journal Item exports. At least one is required.
 
-    for fp in file_paths:
-        try:
-            if fp.endswith('.csv'):
-                df = pd.read_csv(fp)
-            else:
-                df = pd.read_excel(fp)
+    Returns (final_df, summary, hsn_summary_df):
+      - final_df: one row per invoice, with IGST/CGST/SGST computed line by
+        line and summed (so mixed-rate invoices come out correct).
+      - summary: groupby('Nature') totals in the {Category, Taxable, IGST,
+        CGST, SGST} shape gstr3b_engine.py's compute_gstr1_buckets expects,
+        plus a GRAND TOTAL row. This is the authoritative source for
+        GSTR-1/3B totals.
+      - hsn_summary_df: HSN-wise net taxable/tax totals (Table 12 style),
+        netting credit notes against regular invoices per HSN code -- a
+        useful new breakdown this format makes possible, but a best-effort
+        one (see module docstring on the occasional per-line shortfall).
+    """
+    per_line_frames = []
+    for key, base_category in (('file_b2b', 'B2B'), ('file_b2c', 'B2C')):
+        fp = file_paths.get(key) if file_paths else None
+        if fp:
+            per_line_frames.append(_parse_hsn_file(fp, base_category))
 
-            filename = os.path.basename(fp).lower()
-            inv_type, tax = detect_file_type(df, filename)
+    if not per_line_frames:
+        return None, None, None
 
-            print(f"Processing {filename}: Detected {inv_type} | {tax}")
+    per_line_df = pd.concat(per_line_frames, ignore_index=True)
 
-            df_processed = process_file_core(df, filename, inv_type, tax)
-            if not df_processed.empty:
-                processed_dfs.append(df_processed)
+    invoice_df = _invoice_level(per_line_df)
+    for col in ['Taxable Amt.', 'IGST', 'CGST', 'SGST', 'Taxable Amt. (Odoo Reference)']:
+        invoice_df[col] = invoice_df[col].round(2)
+    invoice_df['Invoice Total'] = (
+        invoice_df['Taxable Amt.'] + invoice_df['IGST'] + invoice_df['CGST'] + invoice_df['SGST']
+    ).round(2)
 
-        except Exception as e:
-            print(f"Failed to process file {fp}: {str(e)}")
-            continue
+    mismatch = (invoice_df['Taxable Amt.'] - invoice_df['Taxable Amt. (Odoo Reference)']).abs()
+    flagged = invoice_df[mismatch > 1.0]
+    if not flagged.empty:
+        print(
+            f"GSTR-1 note: {len(flagged)} invoice(s) where the computed taxable value "
+            f"(summed from line items) differs from Odoo's own invoice total by more than "
+            f"Rs 1 -- likely a line posted outside this export. Invoice numbers: "
+            f"{list(flagged['Number'])}"
+        )
 
-    if not processed_dfs:
-        return None, None
+    final_cols = ['Nature', 'Partner', 'GSTIN', 'Date', 'Number', 'HSN/SAC Code',
+                  'Invoice Total', 'Taxable Amt.', 'IGST', 'CGST', 'SGST',
+                  'Taxable Amt. (Odoo Reference)']
+    final_df = invoice_df[[c for c in final_cols if c in invoice_df.columns]].copy()
 
-    # 2. Merge
-    merged_df = pd.concat(processed_dfs, ignore_index=True)
-
-    # 3. Calculate Lines
-    merged_df['Line_Total'] = (
-        merged_df['Taxable Amt.'].fillna(0) +
-        merged_df['IGST'].fillna(0) +
-        merged_df['CGST'].fillna(0) +
-        merged_df['SGST'].fillna(0)
-    )
-
-    # Invoice Totals
-    if 'Number' in merged_df.columns:
-        inv_totals = merged_df.groupby('Number')['Line_Total'].sum().reset_index()
-        inv_totals.rename(columns={'Line_Total': 'Invoice Total'}, inplace=True)
-        if 'Invoice Total' in merged_df.columns: del merged_df['Invoice Total']
-        merged_df = pd.merge(merged_df, inv_totals, on='Number', how='left')
-
-    # 4. Prepare Final Data
-    final_cols = [
-        'Nature', 'Partner', 'GSTIN', 'PAN No.', 'Date', 'Number',
-        'Reference', 'Label', 'Invoice Total', 'Taxable Amt.', 'IGST', 'CGST', 'SGST'
-    ]
-    existing_cols = [c for c in final_cols if c in merged_df.columns]
-    final_df = merged_df[existing_cols].copy()
-
-    # 5. Create Summary
-    summary = merged_df.groupby('Nature').agg(
-        Taxable=('Taxable Amt.', 'sum'),
-        IGST=('IGST', 'sum'),
-        CGST=('CGST', 'sum'),
-        SGST=('SGST', 'sum')
-    ).reset_index()
-    summary.rename(columns={'Nature': 'Category'}, inplace=True)
-
-    # Add Grand Total Row to Summary
+    summary = invoice_df.groupby('Nature').agg(
+        Taxable=('Taxable Amt.', 'sum'), IGST=('IGST', 'sum'),
+        CGST=('CGST', 'sum'), SGST=('SGST', 'sum'),
+    ).reset_index().rename(columns={'Nature': 'Category'})
     total_row = pd.DataFrame([{
         'Category': 'GRAND TOTAL',
-        'Taxable': summary['Taxable'].sum(),
-        'IGST': summary['IGST'].sum(),
-        'CGST': summary['CGST'].sum(),
-        'SGST': summary['SGST'].sum()
+        'Taxable': summary['Taxable'].sum(), 'IGST': summary['IGST'].sum(),
+        'CGST': summary['CGST'].sum(), 'SGST': summary['SGST'].sum(),
     }])
     summary = pd.concat([summary, total_row], ignore_index=True)
-
-    # Rounding
     for col in ['Taxable', 'IGST', 'CGST', 'SGST']:
         summary[col] = summary[col].round(2)
 
-    return final_df, summary
+    is_cdnr = per_line_df['Nature'].str.contains('CDNR')
+    sign = np.where(is_cdnr, -1, 1)
+    hsn_summary_df = per_line_df.assign(
+        Signed_Taxable=per_line_df['Line_Taxable'] * sign,
+        Signed_IGST=per_line_df['Line_IGST'] * sign,
+        Signed_CGST=per_line_df['Line_CGST'] * sign,
+        Signed_SGST=per_line_df['Line_SGST'] * sign,
+    ).groupby('HSN/SAC Code', as_index=False).agg(
+        **{'Taxable Value': ('Signed_Taxable', 'sum')},
+        IGST=('Signed_IGST', 'sum'), CGST=('Signed_CGST', 'sum'), SGST=('Signed_SGST', 'sum'),
+    )
+    hsn_summary_df['Total Tax'] = hsn_summary_df['IGST'] + hsn_summary_df['CGST'] + hsn_summary_df['SGST']
+    for col in ['Taxable Value', 'IGST', 'CGST', 'SGST', 'Total Tax']:
+        hsn_summary_df[col] = hsn_summary_df[col].round(2)
+    hsn_summary_df = hsn_summary_df.sort_values('HSN/SAC Code').reset_index(drop=True)
+
+    return final_df, summary, hsn_summary_df
 
 
 def process_gstr1_odoo(file_paths, output_folder, custom_filename=None):
     """
     Main Wrapper:
-    1. Reads files.
-    2. Processes rows.
-    3. Generates formatted Excel with Subtotals and AutoFilter.
+    1. Reads the HSN B2B / HSN B2C files.
+    2. Computes per-invoice GSTR-1 data and category/HSN summaries.
+    3. Generates a formatted Excel with Subtotals, AutoFilter, and an HSN
+       Summary sheet.
     """
     try:
-        final_df, summary = compute_gstr1_data(file_paths)
+        final_df, summary, hsn_summary_df = compute_gstr1_data(file_paths)
         if final_df is None:
-            return {"success": False, "error": "Could not process any valid data."}
+            return {"success": False, "error": "Could not process any valid data. Upload at least one of the HSN B2B / HSN B2C files."}
 
-        # --- 6. EXCEL GENERATION WITH SUBTOTALS & FILTERS ---
         if custom_filename and str(custom_filename).strip():
             clean_name = re.sub(r'[\\/*?:"<>|]', '-', str(custom_filename).strip())
             output_filename = f"{clean_name} GSTR1.xlsx"
@@ -230,46 +210,43 @@ def process_gstr1_odoo(file_paths, output_folder, custom_filename=None):
 
         output_full_path = os.path.join(output_folder, output_filename)
 
-        # We use Pandas to write data, then openpyxl to add filters/styles
         with pd.ExcelWriter(output_full_path, engine='openpyxl') as writer:
-            # Write Main Data
             final_df.to_excel(writer, sheet_name='GSTR1 Data', index=False)
-            
-            # Add a Total Row at the bottom of detailed data
+
             worksheet = writer.sheets['GSTR1 Data']
-            last_row = len(final_df) + 2 # +1 for header, +1 for next row
-            
-            # Write Summary 4 rows below the data (Single Sheet Request)
+            last_row = len(final_df) + 2
+
             summary_start_row = last_row + 4
             summary.to_excel(writer, sheet_name='GSTR1 Data', index=False, startrow=summary_start_row)
+
+            hsn_summary_df.to_excel(writer, sheet_name='HSN Summary', index=False)
 
         # --- POST-PROCESSING (Formatting) ---
         import openpyxl
         wb = openpyxl.load_workbook(output_full_path)
         ws = wb['GSTR1 Data']
 
-        # 1. Add AutoFilter to the main table headers
         ws.auto_filter.ref = f"A1:{get_column_letter(ws.max_column)}{len(final_df) + 1}"
 
-        # 2. Add Bold Total Row for Data
         ws.cell(row=last_row, column=1).value = "GRAND TOTAL"
         ws.cell(row=last_row, column=1).font = openpyxl.styles.Font(bold=True)
-        
-        # Sum columns K, L, M, N (Taxable, IGST, CGST, SGST) - assuming standard layout
-        # Dynamic mapping based on final_df columns
+
         for col_name in ['Taxable Amt.', 'IGST', 'CGST', 'SGST']:
             if col_name in final_df.columns:
                 col_idx = final_df.columns.get_loc(col_name) + 1
-                # Excel Formula for Subtotal (9 = SUM, supports filters)
                 col_letter = get_column_letter(col_idx)
                 ws.cell(row=last_row, column=col_idx).value = f"=SUBTOTAL(9, {col_letter}2:{col_letter}{len(final_df)+1})"
                 ws.cell(row=last_row, column=col_idx).font = openpyxl.styles.Font(bold=True)
 
+        hsn_ws = wb['HSN Summary']
+        if len(hsn_summary_df) > 0:
+            hsn_ws.auto_filter.ref = f"A1:{get_column_letter(hsn_ws.max_column)}{len(hsn_summary_df) + 1}"
+
         wb.save(output_full_path)
 
         # Cleanup
-        for fp in file_paths:
-            if os.path.exists(fp): os.remove(fp)
+        for fp in file_paths.values():
+            if fp and os.path.exists(fp): os.remove(fp)
 
         return {
             "success": True,

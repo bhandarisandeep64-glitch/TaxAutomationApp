@@ -520,6 +520,31 @@ def write_not_claimed_working_sheet(writer, period_label):
     ws.set_column(0, 7, 16)
 
 
+def write_hsn_summary_sheet(writer, hsn_summary_df):
+    """HSN-wise net taxable/tax totals from the GSTR-1 HSN B2B/B2C files --
+    new in this format (see gstr1_odoo.compute_gstr1_data docstring); a
+    best-effort per-HSN breakdown, not the authoritative source of the 3B
+    totals above. Absent entirely when GSTR-1 was entered manually."""
+    wb = writer.book
+    ws = wb.add_worksheet("HSN SUMMARY")
+    writer.sheets["HSN SUMMARY"] = ws
+    bold = wb.add_format({'bold': True})
+    num = wb.add_format({'num_format': '#,##0.00'})
+
+    ws.set_column(0, 0, 16)
+    ws.set_column(1, 5, 16)
+
+    if hsn_summary_df is None or hsn_summary_df.empty:
+        ws.write(0, 0, 'No HSN-wise data available for this period.', bold)
+        return
+
+    ws.write_row(0, 0, list(hsn_summary_df.columns), bold)
+    for r, (_, row) in enumerate(hsn_summary_df.iterrows(), start=1):
+        for c, col in enumerate(hsn_summary_df.columns):
+            fmt = None if col == 'HSN/SAC Code' else num
+            ws.write(r, c, row[col], fmt)
+
+
 # ==========================================
 #  MAIN ENTRY POINT
 # ==========================================
@@ -538,9 +563,10 @@ def generate_gstr3b_report(gstr1_file_paths, file_portal, odoo_files_dict,
 
     if manual_gstr1_buckets is not None:
         gstr1_detail_df = None
+        gstr1_hsn_summary_df = None
         gstr1_buckets = build_manual_gstr1_buckets(manual_gstr1_buckets)
     else:
-        gstr1_detail_df, gstr1_summary_df = compute_gstr1_data(gstr1_file_paths)
+        gstr1_detail_df, gstr1_summary_df, gstr1_hsn_summary_df = compute_gstr1_data(gstr1_file_paths)
         gstr1_buckets = compute_gstr1_buckets(gstr1_summary_df)
 
     processed_portal, processed_books, reference_sheets = compute_reco_data(file_portal, odoo_files_dict, period)
@@ -555,6 +581,7 @@ def generate_gstr3b_report(gstr1_file_paths, file_portal, odoo_files_dict,
         write_3b_summary_sheet(writer, opening_itc, period_label)
         write_gstr2b_summary_sheet(writer, gstr2b_buckets)
         write_gstr1_summary_sheet(writer, gstr1_buckets, gstr1_detail_df)
+        write_hsn_summary_sheet(writer, gstr1_hsn_summary_df)
         write_not_claimed_working_sheet(writer, period_label)
 
         sorted_sheets = get_smart_sorted_order(processed_portal, processed_books)

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import {
-  Upload, FileText, CheckCircle, Download, Calculator, X, Plus, Calendar, AlertCircle, Zap, ChevronDown, ChevronRight, Keyboard, FileUp
+  Upload, FileText, CheckCircle, Download, Calculator, X, Calendar, AlertCircle, Zap, ChevronDown, ChevronRight, Keyboard, FileUp
 } from 'lucide-react';
 import { apiFetch } from '../../api/client';
 import { PageHeader, Card, Button, UploadSlot } from '../../components/ui';
@@ -12,6 +12,11 @@ const ODOO_SLOTS = [
   { id: 'odoo_rcm_igst', label: 'RCM IGST' },
 ];
 
+const HSN_SLOTS = [
+  { key: 'file_b2b', label: 'HSN B2B' },
+  { key: 'file_b2c', label: 'HSN B2C' },
+];
+
 const GSTR1_MANUAL_CATEGORIES = ['B2B', 'B2B CDNR', 'B2C', 'B2C CDNR'];
 const emptyManualGstr1 = () => Object.fromEntries(
   GSTR1_MANUAL_CATEGORIES.map(cat => [cat, { taxable: '', igst: '', cgst: '', sgst: '' }])
@@ -21,7 +26,7 @@ export default function Gstr3bOdoo() {
   const [clientName, setClientName] = useState('');
   const [period, setPeriod] = useState('');
   const [gstr1Mode, setGstr1Mode] = useState('upload'); // 'upload' | 'manual'
-  const [gstr1Files, setGstr1Files] = useState([]);
+  const [gstr1Files, setGstr1Files] = useState({ file_b2b: null, file_b2c: null });
   const [manualGstr1, setManualGstr1] = useState(emptyManualGstr1());
   const [portalFile, setPortalFile] = useState(null);
   const [odooFiles, setOdooFiles] = useState({
@@ -34,13 +39,10 @@ export default function Gstr3bOdoo() {
   const [message, setMessage] = useState('');
   const [downloadUrl, setDownloadUrl] = useState(null);
 
-  const handleGstr1FileChange = (e) => {
-    if (e.target.files && e.target.files.length > 0) {
-      setGstr1Files(prev => [...prev, ...Array.from(e.target.files)]);
-      setStatus('idle');
-    }
+  const handleGstr1FileChange = (key) => (e) => {
+    if (e.target.files[0]) setGstr1Files(prev => ({ ...prev, [key]: e.target.files[0] }));
   };
-  const removeGstr1File = (index) => setGstr1Files(prev => prev.filter((_, i) => i !== index));
+  const removeGstr1File = (key) => setGstr1Files(prev => ({ ...prev, [key]: null }));
 
   const handleManualGstr1Change = (cat, field) => (e) => {
     setManualGstr1(prev => ({ ...prev, [cat]: { ...prev[cat], [field]: e.target.value } }));
@@ -54,7 +56,7 @@ export default function Gstr3bOdoo() {
   const handleRun = async () => {
     if (!clientName.trim()) { setStatus('error'); setMessage('Client name is required.'); return; }
     if (!period) { setStatus('error'); setMessage('Period is required.'); return; }
-    if (gstr1Mode === 'upload' && gstr1Files.length === 0) { setStatus('error'); setMessage('At least one GSTR-1 Odoo file is required (or switch to manual entry).'); return; }
+    if (gstr1Mode === 'upload' && !gstr1Files.file_b2b && !gstr1Files.file_b2c) { setStatus('error'); setMessage('Upload at least one of the HSN B2B / HSN B2C files (or switch to manual entry).'); return; }
     if (!portalFile) { setStatus('error'); setMessage('GSTR-2B portal file is required.'); return; }
     if (!Object.values(odooFiles).some(f => f)) { setStatus('error'); setMessage('At least one Odoo purchase register is required.'); return; }
 
@@ -77,7 +79,8 @@ export default function Gstr3bOdoo() {
       });
       formData.append('gstr1_manual', JSON.stringify(payload));
     } else {
-      gstr1Files.forEach(f => formData.append('gstr1_files', f));
+      if (gstr1Files.file_b2b) formData.append('file_b2b', gstr1Files.file_b2b);
+      if (gstr1Files.file_b2c) formData.append('file_b2c', gstr1Files.file_b2c);
     }
     formData.append('file_portal', portalFile);
     Object.keys(odooFiles).forEach(key => { if (odooFiles[key]) formData.append(key, odooFiles[key]); });
@@ -185,29 +188,11 @@ export default function Gstr3bOdoo() {
             </div>
 
             {gstr1Mode === 'upload' ? (
-              <>
-                <div className="relative mb-3">
-                  <input type="file" id="gstr1-upload" className="hidden" multiple accept=".xlsx, .csv" onChange={handleGstr1FileChange} />
-                  <label
-                    htmlFor="gstr1-upload"
-                    className="cursor-pointer flex items-center justify-center gap-2 w-full px-4 py-3 rounded-xl border border-dashed border-white/[0.12] hover:border-amber-500/50 hover:bg-white/[0.02] transition-colors text-neutral-500 hover:text-neutral-200"
-                  >
-                    <Plus className="w-4 h-4" />
-                    <span className="text-sm font-medium">Add Sales/CDNR Ledger Files</span>
-                  </label>
-                </div>
-                {gstr1Files.length > 0 && (
-                  <div className="flex flex-wrap gap-2">
-                    {gstr1Files.map((file, index) => (
-                      <div key={index} className="flex items-center gap-2 px-3 py-1.5 rounded-full border border-white/[0.08] bg-neutral-800/60 text-xs text-neutral-300 animate-in zoom-in-95">
-                        <FileText className="w-3 h-3 text-amber-400" />
-                        <span className="truncate max-w-[150px]">{file.name}</span>
-                        <button onClick={() => removeGstr1File(index)} className="hover:text-red-400"><X className="w-3 h-3" /></button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </>
+              <div className="grid grid-cols-2 gap-4">
+                {HSN_SLOTS.map(s => (
+                  <UploadSlot key={s.key} title={s.label} file={gstr1Files[s.key]} onChange={handleGstr1FileChange(s.key)} onRemove={() => removeGstr1File(s.key)} />
+                ))}
+              </div>
             ) : (
               <div className="space-y-3">
                 <p className="text-[11px] text-neutral-500 -mt-1 mb-2">

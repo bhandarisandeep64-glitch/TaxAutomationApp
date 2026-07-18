@@ -309,10 +309,11 @@ def update_compliance():
 @app.route('/api/indirect-tax/gstr1-odoo', methods=['POST'])
 @require_auth
 def run_gstr1_odoo():
-    if 'files' not in request.files: return jsonify({"error": "No file part"}), 400
-    saved_paths = save_files_list('files')
+    file_paths = save_files_dict(['file_b2b', 'file_b2c'], prefix_with_key=False)
+    if not file_paths:
+        return jsonify({"error": "Upload at least one of the HSN B2B / HSN B2C files."}), 400
     custom_name = request.form.get('custom_name', '')
-    return run_processor(process_gstr1_odoo, saved_paths, app.config['OUTPUT_FOLDER'], custom_name)
+    return run_processor(process_gstr1_odoo, file_paths, app.config['OUTPUT_FOLDER'], custom_name)
 
 @app.route('/api/indirect-tax/gstr2b-odoo', methods=['POST'])
 @require_auth
@@ -449,7 +450,7 @@ def reco_gstr2b_zoho_route():
 @app.route('/api/indirect-tax/gstr3b-odoo', methods=['POST'])
 @require_auth
 def run_gstr3b_odoo():
-    saved_gstr1_paths = []
+    saved_gstr1_paths = {}
     try:
         client_name = (request.form.get('client_name') or '').strip()
         period = (request.form.get('period') or '').strip()
@@ -478,14 +479,9 @@ def run_gstr3b_odoo():
                 return jsonify({'error': 'Invalid GSTR-1 manual entry data.'}), 400
 
         if manual_gstr1_buckets is None:
-            for file in request.files.getlist('gstr1_files'):
-                if file and file.filename != '':
-                    filename = secure_filename(file.filename)
-                    fp = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-                    file.save(fp)
-                    saved_gstr1_paths.append(fp)
+            saved_gstr1_paths = save_files_dict(['file_b2b', 'file_b2c'], prefix_with_key=False)
             if not saved_gstr1_paths:
-                return jsonify({'error': 'At least one GSTR-1 Odoo ledger file is required (or fill in GSTR-1 amounts manually).'}), 400
+                return jsonify({'error': 'Upload at least one of the HSN B2B / HSN B2C files (or fill in GSTR-1 amounts manually).'}), 400
 
         opening_itc_override = None
         if any(request.form.get(k) not in (None, '') for k in ('opening_igst', 'opening_cgst', 'opening_sgst')):
@@ -516,7 +512,7 @@ def run_gstr3b_odoo():
         return jsonify({'error': str(e)}), 500
 
     finally:
-        for fp in saved_gstr1_paths:
+        for fp in saved_gstr1_paths.values():
             if os.path.exists(fp): os.remove(fp)
 
 # --- GSTR-3B WORKING PAPER (ZOHO) ---

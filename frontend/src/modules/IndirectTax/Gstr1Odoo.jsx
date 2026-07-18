@@ -1,10 +1,15 @@
 import React, { useState } from 'react';
-import { FileText, CheckCircle, Download, Type, Zap, X, Plus, TrendingUp } from 'lucide-react';
+import { CheckCircle, Download, Type, Zap, TrendingUp } from 'lucide-react';
 import { apiFetch } from '../../api/client';
-import { PageHeader, Card, Button } from '../../components/ui';
+import { PageHeader, Card, Button, UploadSlot } from '../../components/ui';
+
+const HSN_SLOTS = [
+  { key: 'file_b2b', label: 'HSN B2B' },
+  { key: 'file_b2c', label: 'HSN B2C' },
+];
 
 export default function Gstr1Odoo() {
-  const [files, setFiles] = useState([]);
+  const [files, setFiles] = useState({ file_b2b: null, file_b2c: null });
   const [reportName, setReportName] = useState('');
   const [status, setStatus] = useState('idle');
   const [message, setMessage] = useState('');
@@ -12,28 +17,24 @@ export default function Gstr1Odoo() {
   const [finalFileName, setFinalFileName] = useState('');
   const [summaryData, setSummaryData] = useState([]);
 
-  const handleFileChange = (e) => {
-    if (e.target.files && e.target.files.length > 0) {
-      const newFiles = Array.from(e.target.files);
-      setFiles(prev => [...prev, ...newFiles]);
+  const handleFileChange = (key) => (e) => {
+    if (e.target.files[0]) {
+      setFiles(prev => ({ ...prev, [key]: e.target.files[0] }));
       setStatus('idle');
       setMessage('');
       setDownloadUrl(null);
       setSummaryData([]);
     }
   };
-
-  const removeFile = (indexToRemove) => {
-    setFiles(prev => prev.filter((_, index) => index !== indexToRemove));
-    setStatus('idle');
-  };
+  const removeFile = (key) => setFiles(prev => ({ ...prev, [key]: null }));
 
   const handleRunAutomation = async () => {
-    if (files.length === 0) return;
+    if (!files.file_b2b && !files.file_b2c) return;
 
     setStatus('processing');
     const formData = new FormData();
-    files.forEach(file => formData.append('files', file));
+    if (files.file_b2b) formData.append('file_b2b', files.file_b2b);
+    if (files.file_b2c) formData.append('file_b2c', files.file_b2c);
     formData.append('custom_name', reportName);
 
     try {
@@ -66,52 +67,30 @@ export default function Gstr1Odoo() {
       <PageHeader icon={TrendingUp} eyebrow="Indirect Tax" title="GSTR-1 Automation" subtitle="Odoo" />
 
       <Card>
-        <div className="flex flex-col md:flex-row gap-6 items-start">
-          <div className="flex-1 w-full space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="flex items-center gap-3 px-4 py-3 rounded-xl border border-white/[0.08] bg-black/30 focus-within:border-amber-500/60 focus-within:ring-2 focus-within:ring-amber-500/20 transition-colors">
-                <Type className="w-4 h-4 text-neutral-600" />
-                <input
-                  type="text"
-                  placeholder="Report Name (e.g. Nov 2025 Sales)"
-                  value={reportName}
-                  onChange={(e) => setReportName(e.target.value)}
-                  className="bg-transparent border-none outline-none text-neutral-100 w-full placeholder-neutral-600 text-sm font-medium"
-                />
-              </div>
-
-              <div className="relative">
-                <input type="file" id="gstr-upload" className="hidden" multiple accept=".xlsx, .csv" onChange={handleFileChange} />
-                <label
-                  htmlFor="gstr-upload"
-                  className="cursor-pointer flex items-center justify-center gap-2 w-full px-4 py-3 rounded-xl border border-dashed border-white/[0.12] hover:border-amber-500/50 hover:bg-white/[0.02] transition-colors text-neutral-500 hover:text-neutral-200"
-                >
-                  <Plus className="w-4 h-4" />
-                  <span className="text-sm font-medium">Add Sales Registers</span>
-                </label>
-              </div>
-            </div>
-
-            {files.length > 0 && (
-              <div className="flex flex-wrap gap-2 pt-2">
-                {files.map((file, index) => (
-                  <div key={index} className="flex items-center gap-2 px-3 py-1.5 rounded-full border border-white/[0.08] bg-neutral-800/60 text-xs text-neutral-300 animate-in zoom-in-95">
-                    <FileText className="w-3 h-3 text-amber-400" />
-                    <span className="truncate max-w-[150px]">{file.name}</span>
-                    <button onClick={() => removeFile(index)} className="hover:text-red-400"><X className="w-3 h-3" /></button>
-                  </div>
-                ))}
-                <span className="text-xs text-neutral-500 self-center ml-2">{files.length} files</span>
-              </div>
-            )}
+        <div className="space-y-4">
+          <div className="flex items-center gap-3 px-4 py-3 rounded-xl border border-white/[0.08] bg-black/30 focus-within:border-amber-500/60 focus-within:ring-2 focus-within:ring-amber-500/20 transition-colors">
+            <Type className="w-4 h-4 text-neutral-600" />
+            <input
+              type="text"
+              placeholder="Report Name (e.g. Nov 2025 Sales)"
+              value={reportName}
+              onChange={(e) => setReportName(e.target.value)}
+              className="bg-transparent border-none outline-none text-neutral-100 w-full placeholder-neutral-600 text-sm font-medium"
+            />
           </div>
 
-          <div className="flex-shrink-0 self-center">
-            <Button icon={Zap} loading={status === 'processing'} disabled={files.length === 0} onClick={handleRunAutomation}>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {HSN_SLOTS.map(s => (
+              <UploadSlot key={s.key} title={s.label} file={files[s.key]} onChange={handleFileChange(s.key)} onRemove={() => removeFile(s.key)} />
+            ))}
+          </div>
+
+          <div className="flex justify-center pt-2">
+            <Button icon={Zap} loading={status === 'processing'} disabled={!files.file_b2b && !files.file_b2c} onClick={handleRunAutomation}>
               {status === 'processing' ? 'Processing' : 'Process GSTR-1'}
             </Button>
-            {status === 'error' && <p className="text-red-400 text-xs mt-2 text-center max-w-[160px]">{message}</p>}
           </div>
+          {status === 'error' && <p className="text-red-400 text-xs text-center">{message}</p>}
         </div>
       </Card>
 
@@ -143,7 +122,7 @@ export default function Gstr1Odoo() {
                 </thead>
                 <tbody className="divide-y divide-white/[0.06]">
                   {summaryData.map((row, idx) => (
-                    <tr key={idx} className={`transition-colors hover:bg-white/[0.02] ${row.Category === 'Total' ? 'font-semibold bg-black/10 text-amber-400' : 'text-neutral-300'}`}>
+                    <tr key={idx} className={`transition-colors hover:bg-white/[0.02] ${row.Category === 'GRAND TOTAL' ? 'font-semibold bg-black/10 text-amber-400' : 'text-neutral-300'}`}>
                       <td className="p-4">{row.Category}</td>
                       <td className="p-4 text-right font-mono">₹{row.Taxable?.toLocaleString()}</td>
                       <td className="p-4 text-right font-mono">₹{row.IGST?.toLocaleString()}</td>
