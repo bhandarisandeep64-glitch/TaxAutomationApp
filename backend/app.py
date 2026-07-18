@@ -296,7 +296,9 @@ def update_compliance():
     if g.current_user['role'] != 'admin':
         user_id = str(g.current_user['id'])
 
-    if not user_id:
+    # user_id can legitimately be 0 (the env master admin's id) -- only
+    # None/missing should be rejected, not falsy-but-present values.
+    if user_id is None or str(user_id).strip() == '':
         return jsonify({"error": "User ID is required"}), 400
 
     result = save_compliance_data(user_id, clients)

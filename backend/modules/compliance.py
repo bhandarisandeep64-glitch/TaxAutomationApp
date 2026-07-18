@@ -8,7 +8,10 @@ def load_compliance_data(user_id=None):
     - If user_id is provided: Returns ONLY that user's clients.
     - If user_id is None (Admin view): Returns ALL clients from EVERYONE flattened into one list.
     """
-    if user_id:
+    # Falsy-but-valid IDs (the env master admin's id is 0) must still be
+    # treated as "a specific user was requested" -- only None means "give
+    # me everyone" (the admin flattened view).
+    if user_id is not None:
         record = db.session.get(ComplianceRecord, str(user_id))
         return record.clients if record else []
 
@@ -20,7 +23,7 @@ def load_compliance_data(user_id=None):
 
 def save_compliance_data(user_id, clients):
     """Saves the list of clients for a SPECIFIC user."""
-    if not user_id:
+    if user_id is None or str(user_id).strip() == '':
         return {"success": False, "error": "User ID required"}
 
     record = db.session.get(ComplianceRecord, str(user_id))
