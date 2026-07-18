@@ -529,20 +529,24 @@ def write_hsn_summary_sheet(writer, hsn_summary_df):
     ws = wb.add_worksheet("HSN SUMMARY")
     writer.sheets["HSN SUMMARY"] = ws
     bold = wb.add_format({'bold': True})
-    num = wb.add_format({'num_format': '#,##0.00'})
+    header = wb.add_format({'bold': True, 'bg_color': '#1F3864', 'font_color': 'white',
+                             'align': 'center', 'valign': 'vcenter'})
+    num = wb.add_format({'num_format': '#,##0.00;[Red](#,##0.00)'})
 
     ws.set_column(0, 0, 16)
     ws.set_column(1, 5, 16)
+    ws.freeze_panes(1, 0)
 
     if hsn_summary_df is None or hsn_summary_df.empty:
         ws.write(0, 0, 'No HSN-wise data available for this period.', bold)
         return
 
-    ws.write_row(0, 0, list(hsn_summary_df.columns), bold)
+    ws.write_row(0, 0, list(hsn_summary_df.columns), header)
     for r, (_, row) in enumerate(hsn_summary_df.iterrows(), start=1):
         for c, col in enumerate(hsn_summary_df.columns):
             fmt = None if col == 'HSN/SAC Code' else num
             ws.write(r, c, row[col], fmt)
+    ws.autofilter(0, 0, len(hsn_summary_df), len(hsn_summary_df.columns) - 1)
 
 
 # ==========================================

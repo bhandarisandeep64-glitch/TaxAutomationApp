@@ -69,8 +69,9 @@ def test_b2b_regular_and_cdnr_with_mixed_rates():
 
     cn = final_df[final_df['Number'] == 'CN-001'].iloc[0]
     assert cn['Nature'] == 'B2B CDNR'
-    assert _approx(cn['Taxable Amt.'], 2000.0)
-    assert _approx(cn['CGST'], 180.0) and _approx(cn['SGST'], 180.0)
+    # Shown as negative in the detail table so a plain SUM nets it out
+    assert _approx(cn['Taxable Amt.'], -2000.0)
+    assert _approx(cn['CGST'], -180.0) and _approx(cn['SGST'], -180.0)
 
     cat = summary.set_index('Category')
     assert _approx(cat.loc['B2B', 'Taxable'], 15000.0)
@@ -99,7 +100,7 @@ def test_b2c_credit_note_detected_without_gstr_section_tag():
     cn = final_df[final_df['Number'] == 'B2C-CN-001'].iloc[0]
     assert regular['Nature'] == 'B2C'
     assert cn['Nature'] == 'B2C CDNR'
-    assert _approx(cn['Taxable Amt.'], 200.0)
+    assert _approx(cn['Taxable Amt.'], -200.0)
 
     print("B2C credit-note detection via Debit column (no GSTR Section tag): OK")
 
@@ -123,8 +124,8 @@ def test_credit_note_with_amount_in_credit_column_not_debit():
 
     row = final_df.iloc[0]
     assert row['Nature'] == 'B2B CDNR', f"expected B2B CDNR, got {row['Nature']}"
-    assert _approx(row['Taxable Amt.'], 3000.0)
-    assert _approx(row['CGST'], 270.0) and _approx(row['SGST'], 270.0)
+    assert _approx(row['Taxable Amt.'], -3000.0)
+    assert _approx(row['CGST'], -270.0) and _approx(row['SGST'], -270.0)
 
     cat = summary.set_index('Category')
     assert _approx(cat.loc['B2B CDNR', 'Taxable'], 3000.0)
@@ -166,6 +167,58 @@ def test_hsn_summary_nets_credit_notes():
     row = hsn_summary_df[hsn_summary_df['HSN/SAC Code'] == 48239019].iloc[0]
     assert _approx(row['Taxable Value'], 600.0), row['Taxable Value']  # 1000 - 400, netted
     print("HSN summary nets credit notes: OK")
+
+
+def test_grand_total_nets_credit_notes_not_adds():
+    """Found live: the standalone report's GRAND TOTAL row was blindly
+    summing all 4 categories (B2B, B2B CDNR, B2C, B2C CDNR -- each a
+    positive magnitude), which double-counted credit notes as extra sales
+    instead of subtracting them. Must net: B2B - B2B CDNR + B2C - B2C CDNR."""
+    tmpdir = tempfile.mkdtemp()
+    df = pd.DataFrame([
+        {'GSTR Section': 'B2B Regular', 'Partner': 'A', 'GSTIN': '27AAAAA0000A1Z5',
+         'Date': '2026-06-01', 'HSN/SAC Code': 48239019, 'Number': 'INV-100',
+         'Taxes': '18% GST S', 'Taxable Amt.': 10000.0, 'Credit': 10000.0, 'Debit': 0.0},
+        {'GSTR Section': 'CDNR Regular', 'Partner': 'A', 'GSTIN': '27AAAAA0000A1Z5',
+         'Date': '2026-06-02', 'HSN/SAC Code': 48239019, 'Number': 'CN-100',
+         'Taxes': '18% GST S', 'Taxable Amt.': 4000.0, 'Credit': 0.0, 'Debit': 4000.0},
+    ])
+    fp = _write(df, tmpdir, 'grand_total.xlsx')
+    final_df, summary, _ = compute_gstr1_data({'file_b2b': fp})
+
+    gt = summary[summary['Category'] == 'GRAND TOTAL'].iloc[0]
+    assert _approx(gt['Taxable'], 6000.0), gt['Taxable']  # 10000 - 4000, net
+
+    assert _approx(final_df['Taxable Amt.'].sum(), 6000.0), final_df['Taxable Amt.'].sum()
+    cn_row = final_df[final_df['Number'] == 'CN-100'].iloc[0]
+    assert cn_row['Taxable Amt.'] < 0, "credit note must show as negative in the detail table"
+
+    print("GRAND TOTAL nets credit notes (not adds): OK")
+
+
+def test_rounding_does_not_drift_across_many_line_splits():
+    """Rounding per line then summing was found to accumulate drift on
+    invoices with many HSN-code splits -- verifies CGST/SGST come out
+    matching (to the paisa) a once-at-the-end rounding of the full invoice
+    total, not the sum of many independently-rounded halves."""
+    tmpdir = tempfile.mkdtemp()
+    rows = [{'GSTR Section': 'B2B Regular', 'Partner': 'Many Lines Pvt Ltd',
+              'GSTIN': '27AAAAA0000A1Z5', 'Date': '2026-06-15',
+              'HSN/SAC Code': 48239019, 'Number': 'INV-MANY',
+              'Taxes': '18% GST S', 'Taxable Amt.': round(37 * 33.33, 2),
+              'Credit': 33.33, 'Debit': 0.0} for _ in range(37)]
+    df = pd.DataFrame(rows)
+    fp = _write(df, tmpdir, 'many_lines.xlsx')
+    final_df, _, _ = compute_gstr1_data({'file_b2b': fp})
+
+    row = final_df.iloc[0]
+    total_taxable = round(37 * 33.33, 2)
+    expected_total_tax = round(total_taxable * 0.18, 2)
+    assert _approx(row['CGST'] + row['SGST'], expected_total_tax, tol=0.01), \
+        (row['CGST'], row['SGST'], expected_total_tax)
+    assert abs(row['CGST'] - row['SGST']) <= 0.01, "CGST/SGST should differ by at most 1 paisa"
+
+    print("Rounding across many line splits: no drift, matches once-rounded total")
 
 
 def test_real_hsn_b2b_b2c_files():
@@ -215,5 +268,7 @@ if __name__ == '__main__':
     test_credit_note_with_amount_in_credit_column_not_debit()
     test_igst_vs_intrastate_split()
     test_hsn_summary_nets_credit_notes()
+    test_grand_total_nets_credit_notes_not_adds()
+    test_rounding_does_not_drift_across_many_line_splits()
     test_real_hsn_b2b_b2c_files()
     print("ALL TESTS PASSED")
