@@ -40,10 +40,6 @@ from modules.indirect_tax.gstr2b_reco_engine import generate_reco_report
 from modules.indirect_tax.gstr2b_reco_zoho_engine import generate_reco_report_zoho, generate_gstr3b_zoho_report
 from modules.indirect_tax.gstr3b_engine import generate_gstr3b_report
 
-# --- 5. MARIO IMPORTS ---
-from modules.mario.sales import generate_mario_sales_report
-from modules.mario.purchase import generate_mario_purchase_report
-
 app = Flask(__name__)
 init_db(app)
 
@@ -573,40 +569,6 @@ def run_gstr3b_zoho():
     finally:
         for fp in saved_gstr1_paths.values():
             if os.path.exists(fp): os.remove(fp)
-
-# ==========================================
-#  MARIO CUSTOM ROUTES
-# ==========================================
-
-@app.route('/api/mario/sales', methods=['POST'])
-@require_auth
-def run_mario_sales():
-    try:
-        excel_file = generate_mario_sales_report(request.files)
-        return send_file(
-            excel_file,
-            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-            download_name='Mario_Combined_Sales.xlsx',
-            as_attachment=True
-        )
-    except Exception as e:
-        print(f"Mario Sales Error: {e}")
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/api/mario/purchase', methods=['POST'])
-@require_auth
-def run_mario_purchase():
-    try:
-        excel_file = generate_mario_purchase_report(request.files)
-        return send_file(
-            excel_file,
-            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-            download_name='Mario_Combined_Purchase.xlsx',
-            as_attachment=True
-        )
-    except Exception as e:
-        print(f"Mario Purchase Error: {e}")
-        return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
     app.run(port=5000)
