@@ -931,24 +931,38 @@ def generate_reco_report_zoho(file_portal, file_zoho, manual_inputs=None, month_
 # ==========================================
 
 def generate_gstr3b_zoho_report(gstr1_file_paths_dict, file_portal, file_zoho,
-                                 owner_user_id, client_name, period, opening_itc_override=None):
+                                 owner_user_id, client_name, period, opening_itc_override=None,
+                                 manual_sales=None):
     """Wraps generate_reco_report_zoho with the two pieces that used to be
     manual entry: 'sales' figures come from real GSTR-1 Zoho files instead
     of typed-in numbers, and opening ITC auto-carries from last period's
     closing balance (falling back to 0 for a client's first run, or the
     explicit override if given). The Section 49 offset math itself
     (calculate_smart_offset) is untouched -- it's the same logic already
-    used by the standalone reconciliation tool."""
-    from modules.indirect_tax.gstr1_zoho import compute_gstr1_zoho_data
+    used by the standalone reconciliation tool.
 
-    gstr1_frames, _ = compute_gstr1_zoho_data(gstr1_file_paths_dict)
-    sales = {'taxable': 0.0, 'igst': 0.0, 'cgst': 0.0, 'sgst': 0.0}
-    if gstr1_frames:
-        for df in gstr1_frames.values():
-            sales['taxable'] += float(pd.to_numeric(df.get('Taxable Amount', 0), errors='coerce').fillna(0).sum())
-            sales['igst'] += float(pd.to_numeric(df.get('Integrated Tax', 0), errors='coerce').fillna(0).sum())
-            sales['cgst'] += float(pd.to_numeric(df.get('Central Tax', 0), errors='coerce').fillna(0).sum())
-            sales['sgst'] += float(pd.to_numeric(df.get('State/UT Tax', 0), errors='coerce').fillna(0).sum())
+    manual_sales: when provided (dict with taxable/igst/cgst/sgst, CA-entered
+    totals), this skips GSTR-1 file parsing entirely -- for whenever Zoho's
+    GSTR-1 export isn't usable and the sales figures are worked out by hand,
+    same as the equivalent Odoo GSTR-3B option."""
+    if manual_sales is not None:
+        sales = {
+            'taxable': float(manual_sales.get('taxable') or 0),
+            'igst': float(manual_sales.get('igst') or 0),
+            'cgst': float(manual_sales.get('cgst') or 0),
+            'sgst': float(manual_sales.get('sgst') or 0),
+        }
+    else:
+        from modules.indirect_tax.gstr1_zoho import compute_gstr1_zoho_data
+
+        gstr1_frames, _ = compute_gstr1_zoho_data(gstr1_file_paths_dict)
+        sales = {'taxable': 0.0, 'igst': 0.0, 'cgst': 0.0, 'sgst': 0.0}
+        if gstr1_frames:
+            for df in gstr1_frames.values():
+                sales['taxable'] += float(pd.to_numeric(df.get('Taxable Amount', 0), errors='coerce').fillna(0).sum())
+                sales['igst'] += float(pd.to_numeric(df.get('Integrated Tax', 0), errors='coerce').fillna(0).sum())
+                sales['cgst'] += float(pd.to_numeric(df.get('Central Tax', 0), errors='coerce').fillna(0).sum())
+                sales['sgst'] += float(pd.to_numeric(df.get('State/UT Tax', 0), errors='coerce').fillna(0).sum())
 
     opening = get_opening_itc(owner_user_id, client_name, period, opening_itc_override)
 

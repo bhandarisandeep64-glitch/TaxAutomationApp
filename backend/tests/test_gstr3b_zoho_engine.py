@@ -98,6 +98,48 @@ def test_gstr1_sales_wired_into_dashboard_and_itc_carries_forward():
     print("GSTR-3B Zoho: GSTR-1 sales wiring + opening/closing ITC carry-forward OK")
 
 
+def test_manual_sales_entry_skips_gstr1_files_entirely():
+    """When Zoho's GSTR-1 export format isn't usable, the CA can type in the
+    sales totals directly instead -- mirrors the equivalent Odoo GSTR-3B
+    manual entry option. Confirms manual_sales wires into the Master
+    Dashboard the same way real GSTR-1 files would, with no GSTR-1 files
+    passed at all."""
+    app = Flask(__name__)
+    init_db(app)
+
+    with app.app_context():
+        for period in ('2025-11', '2025-12', '2026-01'):
+            rec = db.session.get(GstrPeriodBalance, (TEST_OWNER, 'Zoho Manual Sales Client', period))
+            if rec:
+                db.session.delete(rec)
+        db.session.commit()
+
+        portal_file = _build_portal_file()
+        zoho_file = _build_zoho_file()
+
+        output = generate_gstr3b_zoho_report(
+            {}, portal_file, zoho_file,
+            TEST_OWNER, 'Zoho Manual Sales Client', '2025-12',
+            manual_sales={'taxable': 10000.0, 'igst': 1800.0, 'cgst': 0, 'sgst': 0},
+        )
+
+        sheets = pd.read_excel(output, sheet_name=None)
+        dashboard = sheets['Master Dashboard']
+        output_liability_row = dashboard[dashboard['Particulars'] == '1. Output Liability']
+        assert not output_liability_row.empty
+        assert abs(output_liability_row.iloc[0]['IGST'] - 1800.0) < 0.01, \
+            f"Manually entered sales IGST not wired in correctly: {output_liability_row.iloc[0]['IGST']}"
+
+        # cleanup
+        rec = db.session.get(GstrPeriodBalance, (TEST_OWNER, 'Zoho Manual Sales Client', '2025-12'))
+        if rec:
+            db.session.delete(rec)
+            db.session.commit()
+
+    print("GSTR-3B Zoho: manual sales entry (no GSTR-1 files) wires in correctly")
+
+
 if __name__ == '__main__':
     test_gstr1_sales_wired_into_dashboard_and_itc_carries_forward()
+    test_manual_sales_entry_skips_gstr1_files_entirely()
     print("ALL TESTS PASSED")

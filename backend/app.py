@@ -565,15 +565,24 @@ def run_gstr3b_zoho():
         file_portal = request.files['file_portal']
         file_zoho = request.files['file_zoho']
 
-        for key in ['file_invoice_details', 'file_credit_note_details', 'file_invoice_credit_notes', 'file_export_invoices']:
-            file = request.files.get(key)
-            if file and file.filename != '':
-                filename = secure_filename(f"{key}_{file.filename}")
-                fp = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-                file.save(fp)
-                saved_gstr1_paths[key] = fp
-        if not saved_gstr1_paths:
-            return jsonify({'error': "At least one GSTR-1 Zoho header file ('Inv/CN Headers' or 'Export Invoices') is required."}), 400
+        manual_sales = None
+        raw_manual_sales = request.form.get('gstr1_manual')
+        if raw_manual_sales:
+            try:
+                manual_sales = json.loads(raw_manual_sales)
+            except (TypeError, ValueError):
+                return jsonify({'error': 'Invalid GSTR-1 manual entry data.'}), 400
+
+        if manual_sales is None:
+            for key in ['file_invoice_details', 'file_credit_note_details', 'file_invoice_credit_notes', 'file_export_invoices']:
+                file = request.files.get(key)
+                if file and file.filename != '':
+                    filename = secure_filename(f"{key}_{file.filename}")
+                    fp = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+                    file.save(fp)
+                    saved_gstr1_paths[key] = fp
+            if not saved_gstr1_paths:
+                return jsonify({'error': "At least one GSTR-1 Zoho header file ('Inv/CN Headers' or 'Export Invoices') is required (or fill in the sales amount manually)."}), 400
 
         opening_itc_override = None
         if any(request.form.get(k) not in (None, '') for k in ('opening_igst', 'opening_cgst', 'opening_sgst')):
@@ -588,7 +597,8 @@ def run_gstr3b_zoho():
 
         excel_file = generate_gstr3b_zoho_report(
             saved_gstr1_paths, file_portal, file_zoho,
-            str(g.current_user['id']), client_name, period, opening_itc_override
+            str(g.current_user['id']), client_name, period, opening_itc_override,
+            manual_sales=manual_sales
         )
 
         return send_file(

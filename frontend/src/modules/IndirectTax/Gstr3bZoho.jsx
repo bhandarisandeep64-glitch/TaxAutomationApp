@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import {
-  Upload, FileText, CheckCircle, Download, Calculator, X, Calendar, AlertCircle, Zap, ChevronDown, ChevronRight
+  Upload, FileText, CheckCircle, Download, Calculator, X, Calendar, AlertCircle, Zap, ChevronDown, ChevronRight, Keyboard, FileUp
 } from 'lucide-react';
 import { apiFetch } from '../../api/client';
 import { PageHeader, Card, Button, UploadSlot } from '../../components/ui';
@@ -15,10 +15,12 @@ const GSTR1_SLOTS = [
 export default function Gstr3bZoho() {
   const [clientName, setClientName] = useState('');
   const [period, setPeriod] = useState('');
+  const [gstr1Mode, setGstr1Mode] = useState('upload'); // 'upload' | 'manual'
   const [gstr1Files, setGstr1Files] = useState({
     file_invoice_details: null, file_credit_note_details: null,
     file_invoice_credit_notes: null, file_export_invoices: null,
   });
+  const [manualSales, setManualSales] = useState({ taxable: '', igst: '', cgst: '', sgst: '' });
   const [portalFile, setPortalFile] = useState(null);
   const [zohoFile, setZohoFile] = useState(null);
   const [showOpeningItc, setShowOpeningItc] = useState(false);
@@ -36,7 +38,7 @@ export default function Gstr3bZoho() {
   const handleRun = async () => {
     if (!clientName.trim()) { setStatus('error'); setMessage('Client name is required.'); return; }
     if (!period) { setStatus('error'); setMessage('Period is required.'); return; }
-    if (!Object.values(gstr1Files).some(f => f)) { setStatus('error'); setMessage("At least one GSTR-1 header file ('Inv/CN Headers' or 'Export Invoices') is required."); return; }
+    if (gstr1Mode === 'upload' && !Object.values(gstr1Files).some(f => f)) { setStatus('error'); setMessage("At least one GSTR-1 header file ('Inv/CN Headers' or 'Export Invoices') is required (or switch to manual entry)."); return; }
     if (!portalFile) { setStatus('error'); setMessage('GSTR-2B portal file is required.'); return; }
     if (!zohoFile) { setStatus('error'); setMessage('Zoho Books file is required.'); return; }
 
@@ -46,7 +48,16 @@ export default function Gstr3bZoho() {
     const formData = new FormData();
     formData.append('client_name', clientName.trim());
     formData.append('period', period);
-    Object.keys(gstr1Files).forEach(key => { if (gstr1Files[key]) formData.append(key, gstr1Files[key]); });
+    if (gstr1Mode === 'manual') {
+      formData.append('gstr1_manual', JSON.stringify({
+        taxable: parseFloat(manualSales.taxable) || 0,
+        igst: parseFloat(manualSales.igst) || 0,
+        cgst: parseFloat(manualSales.cgst) || 0,
+        sgst: parseFloat(manualSales.sgst) || 0,
+      }));
+    } else {
+      Object.keys(gstr1Files).forEach(key => { if (gstr1Files[key]) formData.append(key, gstr1Files[key]); });
+    }
     formData.append('file_portal', portalFile);
     formData.append('file_zoho', zohoFile);
     if (showOpeningItc) {
@@ -131,15 +142,54 @@ export default function Gstr3bZoho() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-6">
           <Card>
-            <h3 className="text-sm font-semibold text-neutral-200 mb-4 flex items-center gap-2">
-              <span className="w-6 h-6 rounded bg-indigo-500/15 text-indigo-400 flex items-center justify-center text-xs">2</span>
-              GSTR-1 Zoho Files
-            </h3>
-            <div className="grid grid-cols-2 gap-4">
-              {GSTR1_SLOTS.map(s => (
-                <UploadSlot key={s.key} title={s.title} file={gstr1Files[s.key]} onChange={handleGstr1Change(s.key)} onRemove={() => removeGstr1File(s.key)} />
-              ))}
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-semibold text-neutral-200 flex items-center gap-2">
+                <span className="w-6 h-6 rounded bg-indigo-500/15 text-indigo-400 flex items-center justify-center text-xs">2</span>
+                GSTR-1 Sales Data
+              </h3>
+              <div className="flex items-center gap-1 p-1 rounded-lg border border-white/[0.08] bg-black/20">
+                <button
+                  onClick={() => setGstr1Mode('upload')}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${gstr1Mode === 'upload' ? 'bg-indigo-600 text-white' : 'text-neutral-500 hover:text-neutral-200'}`}
+                >
+                  <FileUp className="w-3.5 h-3.5" /> Upload Files
+                </button>
+                <button
+                  onClick={() => setGstr1Mode('manual')}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${gstr1Mode === 'manual' ? 'bg-indigo-600 text-white' : 'text-neutral-500 hover:text-neutral-200'}`}
+                >
+                  <Keyboard className="w-3.5 h-3.5" /> Enter Manually
+                </button>
+              </div>
             </div>
+
+            {gstr1Mode === 'upload' ? (
+              <div className="grid grid-cols-2 gap-4">
+                {GSTR1_SLOTS.map(s => (
+                  <UploadSlot key={s.key} title={s.title} file={gstr1Files[s.key]} onChange={handleGstr1Change(s.key)} onRemove={() => removeGstr1File(s.key)} />
+                ))}
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <p className="text-[11px] text-neutral-500 -mt-1 mb-2">
+                  Enter this period's total sales figures (feeds the Master Dashboard's Output Liability row).
+                </p>
+                <div className="grid grid-cols-4 gap-3">
+                  {['taxable', 'igst', 'cgst', 'sgst'].map((field) => (
+                    <div key={field} className="px-3 py-2 rounded-lg border border-white/[0.08] bg-black/20">
+                      <label className="text-[10px] font-semibold text-neutral-500 uppercase">{field}</label>
+                      <input
+                        type="number"
+                        placeholder="0.00"
+                        value={manualSales[field]}
+                        onChange={(e) => setManualSales(prev => ({ ...prev, [field]: e.target.value }))}
+                        className="w-full bg-transparent text-sm text-neutral-100 outline-none placeholder-neutral-700"
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </Card>
 
           <Card>
