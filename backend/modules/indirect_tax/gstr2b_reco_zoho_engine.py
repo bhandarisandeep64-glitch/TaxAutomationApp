@@ -704,21 +704,33 @@ def generate_master_dashboard(writer, portal_dict, books_dict, manual_inputs):
                 r_b  = xl_rowcol_to_cell(xl_r - 1, col_idx)
                 ws.write_formula(xl_r, col_idx, f"={r_a3}+{r_a5}-{r_b}", s_bold_num); continue
             if "Current Month ITC" in desc:
-                target = xl_rowcol_to_cell(11 + 1, col_idx) 
+                # Points at "(C) Net ITC Available" (data-list index 10, so
+                # xlsxwriter row 10+1=11) -- was hardcoded to 11+1=12, which
+                # is the blank spacer row right after it, so this always
+                # showed 0 regardless of actual ITC.
+                target = xl_rowcol_to_cell(10 + 1, col_idx)
                 ws.write_formula(xl_r, col_idx, f"={target}", s_num); continue
             if "Total Credit" in desc:
                 r_op = xl_rowcol_to_cell(xl_r - 2, col_idx)
                 r_cur = xl_rowcol_to_cell(xl_r - 1, col_idx)
                 ws.write_formula(xl_r, col_idx, f"={r_op}+{r_cur}", s_bold_num); continue
             if "NET PAYABLE" in desc:
+                # Offset range must span "Paid by IGST" through "Paid by
+                # SGST" (data-list indices 18-20, xlsxwriter rows 19-21) --
+                # was hardcoded one row too late (20-22), silently dropping
+                # the entire "Paid by IGST" line from the cash-payable calc.
                 r_liab = xl_rowcol_to_cell(3 + 1, col_idx)
-                r_off_start = xl_rowcol_to_cell(19 + 1, col_idx)
-                r_off_end = xl_rowcol_to_cell(21 + 1, col_idx)
+                r_off_start = xl_rowcol_to_cell(18 + 1, col_idx)
+                r_off_end = xl_rowcol_to_cell(20 + 1, col_idx)
                 ws.write_formula(xl_r, col_idx, f"=MAX(0, {r_liab}-SUM({r_off_start}:{r_off_end}))", s_red); continue
             if "BALANCE CREDIT" in desc:
-                r_cred = xl_rowcol_to_cell(16 + 1, col_idx)
-                r_off_start = xl_rowcol_to_cell(19 + 1, col_idx)
-                r_off_end = xl_rowcol_to_cell(21 + 1, col_idx)
+                # Same offset-range fix as NET PAYABLE above, plus r_cred
+                # must point at "6. Total Credit Available" (data-list index
+                # 15, xlsxwriter row 16) -- was hardcoded to the blank
+                # spacer row right after it (17).
+                r_cred = xl_rowcol_to_cell(15 + 1, col_idx)
+                r_off_start = xl_rowcol_to_cell(18 + 1, col_idx)
+                r_off_end = xl_rowcol_to_cell(20 + 1, col_idx)
                 ws.write_formula(xl_r, col_idx, f"=MAX(0, {r_cred}-SUM({r_off_start}:{r_off_end}))", s_green); continue
             ws.write(xl_r, col_idx, row[col_idx], s_blue if "Paid by" in desc else s_num)
 

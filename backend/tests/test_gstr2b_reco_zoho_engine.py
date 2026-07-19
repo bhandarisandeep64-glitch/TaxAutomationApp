@@ -138,5 +138,54 @@ def test_gstr2b_reco_zoho_engine():
     print("ALL TESTS PASSED")
 
 
+def test_master_dashboard_formulas_reference_correct_rows():
+    """Real bug found on a live client file: several Master Dashboard
+    formulas used hardcoded row numbers that were each off by one -- "5.
+    Current Month ITC" pointed at a blank spacer row instead of "(C) Net ITC
+    Available" (always showed 0), and both "NET PAYABLE IN CASH" and
+    "BALANCE CREDIT C/F" summed an offset range that excluded "Paid by
+    IGST" entirely and included a blank row instead -- silently dropping the
+    IGST portion of the offset from the final cash-payable figure. Checks
+    the actual formula strings, not just that a value happens to come out
+    right for one dataset (which is exactly how this slipped through
+    before)."""
+    import openpyxl
+
+    portal_file = _build_portal_file()
+    zoho_file = _build_zoho_file()
+    manual_inputs = {
+        'sales': {'igst': 5000.0, 'cgst': 1000.0, 'sgst': 1000.0},
+        'opening': {'igst': 0.0, 'cgst': 0.0, 'sgst': 0.0},
+    }
+
+    output = generate_reco_report_zoho(portal_file, zoho_file, manual_inputs, '2025-12')
+    wb = openpyxl.load_workbook(output, data_only=False)
+    ws = wb['Master Dashboard']
+
+    def formula(desc_substring, col_letter):
+        for row in range(1, ws.max_row + 1):
+            if desc_substring in str(ws.cell(row=row, column=1).value or ''):
+                return ws.cell(row=row, column=3).value if col_letter == 'C' else ws.cell(row=row, column=5).value
+        return None
+
+    # "5. Current Month ITC" must reference row 12 ("(C) Net ITC Available"),
+    # not row 13 (a blank spacer).
+    f = formula('Current Month ITC', 'C')
+    assert f == '=C12', f"Current Month ITC formula wrong: {f}"
+
+    # "NET PAYABLE IN CASH" must sum rows 20:22 ("Paid by IGST" through
+    # "Paid by SGST"), not 21:23 (which excludes IGST and includes a blank).
+    f = formula('NET PAYABLE', 'C')
+    assert f == '=MAX(0, C5-SUM(C20:C22))', f"NET PAYABLE formula wrong: {f}"
+
+    # "BALANCE CREDIT C/F" must reference row 17 ("6. Total Credit
+    # Available"), not row 18 (blank), with the same corrected offset range.
+    f = formula('BALANCE CREDIT', 'C')
+    assert f == '=MAX(0, C17-SUM(C20:C22))', f"BALANCE CREDIT formula wrong: {f}"
+
+    print("Master Dashboard formulas reference the correct rows: OK")
+
+
 if __name__ == '__main__':
     test_gstr2b_reco_zoho_engine()
+    test_master_dashboard_formulas_reference_correct_rows()
