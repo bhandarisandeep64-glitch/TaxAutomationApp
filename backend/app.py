@@ -31,6 +31,7 @@ from modules.direct_tax import fixed_assets
 # --- 3. COMPLIANCE IMPORT ---
 from modules.compliance import load_compliance_data, save_compliance_data
 from modules.notes import list_notes, create_note, update_note, delete_note
+from modules.quick_links import list_links, create_link, update_link, delete_link
 
 # --- 4. INDIRECT TAX IMPORTS ---
 from modules.indirect_tax.gstr1_odoo import process_gstr1_odoo
@@ -335,6 +336,32 @@ def update_note_route(note_id):
 @require_auth
 def delete_note_route(note_id):
     result = delete_note(note_id, str(g.current_user['id']))
+    return jsonify(result), (200 if result.get('success') else 404)
+
+# --- HUB (QUICK LINKS) ---
+@app.route('/api/quick-links', methods=['GET'])
+@require_auth
+def get_quick_links():
+    return jsonify(list_links(str(g.current_user['id'])))
+
+@app.route('/api/quick-links', methods=['POST'])
+@require_auth
+def create_quick_link_route():
+    data = request.json or {}
+    result = create_link(str(g.current_user['id']), data.get('title'), data.get('url'), data.get('category'))
+    return jsonify(result), (200 if result.get('success') else 400)
+
+@app.route('/api/quick-links/<int:link_id>', methods=['PATCH'])
+@require_auth
+def update_quick_link_route(link_id):
+    data = request.json or {}
+    result = update_link(link_id, str(g.current_user['id']), data.get('title'), data.get('url'), data.get('category'))
+    return jsonify(result), (200 if result.get('success') else 404)
+
+@app.route('/api/quick-links/<int:link_id>', methods=['DELETE'])
+@require_auth
+def delete_quick_link_route(link_id):
+    result = delete_link(link_id, str(g.current_user['id']))
     return jsonify(result), (200 if result.get('success') else 404)
 
 # --- INDIRECT TAX ---

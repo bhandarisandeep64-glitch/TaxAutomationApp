@@ -77,6 +77,28 @@ class Note(db.Model):
         }
 
 
+class QuickLink(db.Model):
+    """A saved external link (Odoo, Zoho, GST portal, etc.) -- replaces the
+    Word-doc link list the CA was maintaining as a manual central hub."""
+    __tablename__ = 'quick_links'
+
+    id = db.Column(db.Integer, primary_key=True)
+    owner_user_id = db.Column(db.String(50), nullable=False, index=True)
+    title = db.Column(db.String(120), nullable=False)
+    url = db.Column(db.String(1000), nullable=False)
+    category = db.Column(db.String(80), nullable=False, default='General')
+    created_at = db.Column(db.DateTime, nullable=False, default=db.func.now())
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "title": self.title,
+            "url": self.url,
+            "category": self.category,
+            "createdAt": self.created_at.isoformat() + "Z",
+        }
+
+
 class GstrPeriodBalance(db.Model):
     """Closing ITC balance for a client at the end of a given period, read
     back as next period's opening ITC so it doesn't need re-entering by

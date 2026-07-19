@@ -9,6 +9,7 @@ import ChatWidget from './components/ChatWidget';
 import AdminDashboard from './pages/AdminDashboard';
 import ComplianceTable from './pages/ComplianceTable';
 import Notes from './pages/Notes';
+import Hub from './pages/Hub';
 
 // --- MODULES ---
 import TdsOdoo from './modules/DirectTax/TdsOdoo';
@@ -85,6 +86,7 @@ const [user, setUser] = useState(() => {
         case 'admin_dashboard': return 'Overview';
         case 'compliances': return 'Compliance Tracker';
         case 'notes': return 'Notes';
+        case 'hub': return 'Hub';
         case 'tds_odoo': return 'TDS Automation | Odoo';
         case 'tds_zoho': return 'TDS Automation | Zoho';
         case 'tds_challan': return 'Challan Payment Mapper';
@@ -116,6 +118,7 @@ const [user, setUser] = useState(() => {
       if (currentModule === 'admin_dashboard') return <AdminDashboard currentUser={user} />;
       if (currentModule === 'compliances') return <ComplianceTable user={user} />;
       if (currentModule === 'notes') return <Notes user={user} />;
+      if (currentModule === 'hub') return <Hub />;
       if (currentModule === 'tds_odoo') return <TdsOdoo />;
       if (currentModule === 'tds_zoho') return <TdsZoho />;
       if (currentModule === 'tds_challan') return <TdsChallan />;
