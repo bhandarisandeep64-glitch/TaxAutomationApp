@@ -41,6 +41,8 @@ def test_section_lookup_mapping():
     assert _lookup_new_section('194Q', 0.1) == ('393(1), Sl. 8(ii)', '1031')
     assert _lookup_new_section('194P', 5.0) == ('393(1), Sl. 8(iii)', '1032')
     assert _lookup_new_section('194', 10.0) == ('393(1), Sl. 7', '1029')
+    assert _lookup_new_section('194H', 5.0) == ('393(1), Sl. 1(ii)', '1006')
+    assert _lookup_new_section('194T', 10.0) == ('393(3), Sl. 7', '1067')
 
     # Out-of-scope sections (194R, 194S) are deliberately unmapped
     assert _lookup_new_section('194R', 10.0) == ('', '')

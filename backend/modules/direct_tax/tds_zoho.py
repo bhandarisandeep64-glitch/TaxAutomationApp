@@ -22,12 +22,14 @@ from modules.excel_styles import style_header_row, style_data_rows, autofit_colu
 
 # Sections with a single new code regardless of rate.
 SECTION_FIXED_MAPPING = {
+    '194H': {'new_section': '393(1), Sl. 1(ii)', 'code': '1006'},
     '194M': {'new_section': '393(1), Sl. 6(ii)', 'code': '1025'},
     '194': {'new_section': '393(1), Sl. 7', 'code': '1029'},
     '194DA': {'new_section': '393(1), Sl. 8(i)', 'code': '1030'},
     '194Q': {'new_section': '393(1), Sl. 8(ii)', 'code': '1031'},
     '194P': {'new_section': '393(1), Sl. 8(iii)', 'code': '1032'},
     '194O': {'new_section': '393(1), Sl. 8(v)', 'code': '1035'},
+    '194T': {'new_section': '393(3), Sl. 7', 'code': '1067'},
 }
 
 # Sections where the rate at which TDS was deducted disambiguates which new
