@@ -512,48 +512,6 @@ def reconcile_dataframe(df, candidates, target_col_name, is_portal_sheet, reco_m
     return df
 
 # ==========================================
-#  ITC AVAILABILITY MERGE (same concept as the Odoo reco engine's
-#  apply_itc_availability -- GSTR-2B's portal export puts eligibility info in
-#  dedicated sheets rather than a column, so the sheet name itself is the
-#  category)
-# ==========================================
-
-ITC_AVAILABILITY_LABELS = {
-    "ITC Available": "Yes",
-    "ITC not available": "No",
-    "ITC Reversal": "Reversal",
-    "ITC Rejected": "Rejected",
-}
-
-def apply_itc_availability_zoho(processed_portal, reference_sheets):
-    availability_map = {}
-    for sheet_name, df in reference_sheets.items():
-        label = ITC_AVAILABILITY_LABELS.get(sheet_name.strip())
-        if not label: continue
-        col_gstin = next((c for c in df.columns if 'gstin' in c.lower()), None)
-        if not col_gstin or 'Invoice Number' not in df.columns: continue
-        for _, row in df.iterrows():
-            inv = clean_inv_str(row['Invoice Number'])
-            if inv:
-                availability_map[(clean_gstin(row[col_gstin]), inv)] = label
-
-    if not availability_map:
-        for df in processed_portal.values():
-            df['ITC Availability'] = ''
-        return processed_portal
-
-    for df in processed_portal.values():
-        col_gstin = next((c for c in df.columns if 'gstin' in c.lower()), None)
-        if not col_gstin or 'Invoice Number' not in df.columns:
-            df['ITC Availability'] = ''
-            continue
-        df['ITC Availability'] = [
-            availability_map.get((clean_gstin(g), clean_inv_str(inv)), '')
-            for g, inv in zip(df[col_gstin], df['Invoice Number'])
-        ]
-    return processed_portal
-
-# ==========================================
 #  COMPUTE (shared by the standalone reco report and by
 #  generate_gstr3b_zoho_report, which needs the reconciled DataFrames
 #  directly rather than a finished Excel file to re-parse)
@@ -562,8 +520,21 @@ def apply_itc_availability_zoho(processed_portal, reference_sheets):
 def compute_reco_data_zoho(file_portal, file_zoho, month_str=None):
     """Runs the full portal-vs-Zoho reconciliation and returns
     (processed_portal, zoho_data, reference_sheets) as DataFrames -- no
-    Excel writing. processed_portal sheets have an 'ITC Availability' column
-    merged in from the reference sheets, same as the Odoo reco engine."""
+    Excel writing.
+
+    'ITC Availability' is already a real per-invoice column on the raw B2B/
+    B2B-CDNR sheets straight from the GSTR-2B portal export (confirmed
+    against a real download -- column values are 'Yes'/'No'/etc per
+    invoice), and clean_portal_data/_extract_header_dynamically already
+    carry it through untouched. An earlier version of this function tried
+    to *merge* this column in from the "ITC Available"/"ITC not available"/
+    "ITC Reversal"/"ITC Rejected" sheets, wrongly assuming those were
+    invoice-level lists -- they're actually the portal's own aggregate
+    GSTR-3B-table-wise summary totals (no GSTIN/Invoice Number at all), so
+    that merge found nothing and overwrote the real, already-correct column
+    with blanks, silently zeroing out every ITC bucket. Fixed by just not
+    touching the column -- reconcile_dataframe doesn't reference it either,
+    so it passes through as-is."""
     reco_dt = None
     if month_str:
         try:
@@ -583,8 +554,6 @@ def compute_reco_data_zoho(file_portal, file_zoho, month_str=None):
 
     for key, data in zoho_data.items():
         data['df'] = reconcile_dataframe(data['df'], portal_maps, 'As per Portal', False)
-
-    processed_portal_dfs = apply_itc_availability_zoho(processed_portal_dfs, reference_sheets)
 
     return processed_portal_dfs, zoho_data, reference_sheets
 

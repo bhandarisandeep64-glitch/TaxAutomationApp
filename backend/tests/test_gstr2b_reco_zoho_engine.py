@@ -88,6 +88,73 @@ def _build_zoho_file():
     return buf
 
 
+def _build_portal_file_real_shape():
+    """Models the *actual* raw GSTR-2B portal export shape (confirmed
+    against a real download), which is different from _build_portal_file()
+    above in the one way that mattered for a real bug: 'ITC Availability'
+    is already a genuine per-invoice column sitting right on the B2B sheet
+    itself (GSTN puts it there directly, values like 'Yes'/'No' per row),
+    and the "ITC Available"/"ITC not available"/etc. sheets are NOT
+    invoice-level lists at all -- they're the portal's own aggregate
+    GSTR-3B-table-wise summary (Heading/GSTR-3B table/tax columns only, no
+    GSTIN or Invoice Number anywhere). An earlier version of
+    compute_reco_data_zoho assumed the opposite (eligibility merged in from
+    those aggregate sheets) and, finding no per-invoice data there,
+    overwrote the real 'ITC Availability' column with blanks -- silently
+    zeroing every ITC bucket on real client files. This fixture exists so
+    that regression can't quietly reappear."""
+    b2b_cols = ['GSTIN of supplier', 'Trade/Legal name', 'Invoice number', 'Invoice Date',
+                'Invoice Value (₹)', 'Place of supply', 'Supply Attract Reverse Charge', 'Rate (%)',
+                'Taxable Value (₹)', 'Integrated Tax (₹)', 'Central Tax (₹)', 'State/UT Tax (₹)', 'Cess Amount (₹)',
+                'ITC Availability']
+    rows = [
+        # needs >6 raw rows (header + 6 data rows) to clear clean_portal_data's
+        # "B2B" conditional row-count check -- see _build_portal_file() above.
+        ['27AAAAA0000A1Z5', 'Test Vendor A', 'INV-001', '05-12-2025', 11800, 'Maharashtra', 'No', 18, 10000.00, 1800.00, 0, 0, 0, 'Yes'],
+        ['27FFFFF0000F1Z5', 'Filler Vendor 1', 'FILL-001', '02-12-2025', 1180, 'Maharashtra', 'No', 18, 1000.00, 180.00, 0, 0, 0, 'Yes'],
+        ['27FFFFF0000F1Z5', 'Filler Vendor 1', 'FILL-002', '03-12-2025', 1180, 'Maharashtra', 'No', 18, 1000.00, 180.00, 0, 0, 0, 'Yes'],
+        ['27FFFFF0000F1Z5', 'Filler Vendor 1', 'FILL-003', '04-12-2025', 1180, 'Maharashtra', 'No', 18, 1000.00, 180.00, 0, 0, 0, 'Yes'],
+        ['27FFFFF0000F1Z5', 'Filler Vendor 1', 'FILL-004', '05-12-2025', 1180, 'Maharashtra', 'No', 18, 1000.00, 180.00, 0, 0, 0, 'Yes'],
+        ['27FFFFF0000F1Z5', 'Filler Vendor 1', 'FILL-005', '06-12-2025', 1180, 'Maharashtra', 'No', 18, 1000.00, 180.00, 0, 0, 0, 'Yes'],
+    ]
+    b2b_df = pd.DataFrame(rows, columns=b2b_cols)
+
+    # Real shape of the "ITC Available" reference sheet: aggregate totals
+    # by GSTR-3B heading, no GSTIN/Invoice Number columns at all.
+    itc_summary_df = pd.DataFrame([
+        ['S.no.', 'Heading', 'GSTR-3B table', 'Integrated Tax  (₹)', 'Central Tax (₹)', 'State/UT Tax (₹)', 'Cess  (₹)'],
+        ['I', 'All other ITC - Supplies from registered persons other than reverse charge', '4(A)(5)', 1800.0, 540.0, 0, 0],
+    ])
+
+    buf = BytesIO()
+    with pd.ExcelWriter(buf, engine='xlsxwriter') as writer:
+        b2b_df.to_excel(writer, sheet_name='B2B', header=True, index=False)
+        itc_summary_df.to_excel(writer, sheet_name='ITC Available', header=False, index=False)
+    buf.seek(0)
+    return buf
+
+
+def test_itc_availability_survives_real_shaped_portal_file():
+    """The actual bug: with a real-shaped portal file (native per-invoice
+    'ITC Availability' on B2B, aggregate-only "ITC Available" reference
+    sheet), the B2B sheet's real 'Yes' values must survive
+    compute_reco_data_zoho untouched -- not get overwritten with blanks by
+    a merge step that was solving a problem that doesn't exist."""
+    from modules.indirect_tax.gstr2b_reco_zoho_engine import compute_reco_data_zoho
+
+    portal_file = _build_portal_file_real_shape()
+    zoho_file = _build_zoho_file()
+
+    processed_portal, _, _ = compute_reco_data_zoho(portal_file, zoho_file, '2025-12')
+    b2b = processed_portal['B2B']
+
+    assert 'ITC Availability' in b2b.columns, "ITC Availability column missing entirely"
+    assert (b2b['ITC Availability'] == 'Yes').all(), \
+        f"ITC Availability got wiped out: {b2b['ITC Availability'].tolist()}"
+
+    print("ITC Availability survives a real-shaped portal file (not wiped by a phantom merge) OK")
+
+
 def _get_row(df, inv):
     match = df[df['Invoice Number'] == inv]
     assert len(match) == 1, f"Expected exactly 1 row for invoice {inv!r}, found {len(match)}"
@@ -189,3 +256,4 @@ def test_master_dashboard_formulas_reference_correct_rows():
 if __name__ == '__main__':
     test_gstr2b_reco_zoho_engine()
     test_master_dashboard_formulas_reference_correct_rows()
+    test_itc_availability_survives_real_shaped_portal_file()
