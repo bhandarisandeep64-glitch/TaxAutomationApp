@@ -838,7 +838,7 @@ def generate_vendor_summary(writer, portal_dict, books_dict):
     df_s = pd.DataFrame(summ, columns=cols)
     add_formatting(writer, df_s, "Vendor Summary")
 
-def generate_discrepancy_sheets(writer, portal_dict, books_dict):
+def generate_discrepancy_sheets(writer, portal_dict, books_dict, include_mismatches=True):
     not_in_books = []
     prev_period = []
     mismatches = []
@@ -877,7 +877,7 @@ def generate_discrepancy_sheets(writer, portal_dict, books_dict):
     # Mismatches is the highest-priority sheet for a reviewer (a real
     # discrepancy that needs correcting, not just something missing), so
     # it's written first among the discrepancy tabs.
-    if mismatches:
+    if include_mismatches and mismatches:
         final_mis = pd.concat(mismatches, ignore_index=True)
         add_formatting(writer, final_mis, "Mismatches")
 
@@ -1418,8 +1418,10 @@ def generate_gstr3b_zoho_report(gstr1_file_paths_dict, file_portal, file_zoho,
         write_gstr2b_summary_sheet_zoho(writer, gstr2b_buckets)
         write_gstr1_summary_sheet_zoho(writer, sales)
 
-        generate_vendor_summary(writer, processed_portal_dfs, zoho_data)
-        generate_discrepancy_sheets(writer, processed_portal_dfs, zoho_data)
+        # No Vendor Summary / Mismatches sheets in this report -- per the CA,
+        # this dedicated 3B tool doesn't need them (unlike the standalone
+        # /reco-gstr2b-zoho tool, which still writes both).
+        generate_discrepancy_sheets(writer, processed_portal_dfs, zoho_data, include_mismatches=False)
 
         sorted_sheets = get_smart_sorted_order(processed_portal_dfs, zoho_data)
         for sheet_name, df in sorted_sheets:
