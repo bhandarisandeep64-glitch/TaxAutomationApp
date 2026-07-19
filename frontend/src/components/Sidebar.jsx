@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { FileText, CheckCircle, Users, LogOut, ChevronDown, ChevronRight, Lock, Landmark, StickyNote, Compass } from 'lucide-react';
+import { FileText, CheckCircle, Users, LogOut, ChevronDown, ChevronRight, Lock, Landmark, StickyNote, Compass, Layers } from 'lucide-react';
 import PeepalLeaf from './icons/PeepalLeaf';
 
 export default function Sidebar({ user, onNavigate, onLogout, currentModule, mobileMenuOpen }) {
@@ -40,6 +40,14 @@ export default function Sidebar({ user, onNavigate, onLogout, currentModule, mob
             { title: "Reconciliation (Odoo)", id: "gstr2b_reco_odoo" }, { title: "Reconciliation (Zoho)", id: "gstr2b_reco_zoho" }
         ] },
         { title: "GSTR 3B", id: "gstr3b", sub: [{ title: "Odoo", id: "gstr3b_odoo" }, { title: "Zoho", id: "gstr3b_zoho" }] }
+      ]
+    },
+    {
+      title: "GSTR9",
+      id: "gstr9",
+      icon: Layers,
+      sub: [
+        { title: "Reconciliation", id: "gstr9_reco" }
       ]
     }
   ];

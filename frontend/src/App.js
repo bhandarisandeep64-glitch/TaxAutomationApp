@@ -27,6 +27,8 @@ import RecoGSTR2BZoho from './modules/IndirectTax/RecoGSTR2BZoho';
 import Gstr3bOdoo from './modules/IndirectTax/Gstr3bOdoo';
 import Gstr3bZoho from './modules/IndirectTax/Gstr3bZoho';
 
+import Gstr9Reco from './modules/GSTR9/Gstr9Reco';
+
 export default function App() {
   // Initialize user state from LocalStorage if it exists
 const [user, setUser] = useState(() => {
@@ -87,6 +89,7 @@ const [user, setUser] = useState(() => {
         case 'compliances': return 'Compliance Tracker';
         case 'notes': return 'Notes';
         case 'hub': return 'Hub';
+        case 'gstr9_reco': return 'GSTR-9 Reconciliation';
         case 'tds_odoo': return 'TDS Automation | Odoo';
         case 'tds_zoho': return 'TDS Automation | Zoho';
         case 'tds_challan': return 'Challan Payment Mapper';
@@ -119,6 +122,7 @@ const [user, setUser] = useState(() => {
       if (currentModule === 'compliances') return <ComplianceTable user={user} />;
       if (currentModule === 'notes') return <Notes user={user} />;
       if (currentModule === 'hub') return <Hub />;
+      if (currentModule === 'gstr9_reco') return <Gstr9Reco />;
       if (currentModule === 'tds_odoo') return <TdsOdoo />;
       if (currentModule === 'tds_zoho') return <TdsZoho />;
       if (currentModule === 'tds_challan') return <TdsChallan />;

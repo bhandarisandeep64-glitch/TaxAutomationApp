@@ -41,6 +41,7 @@ from modules.indirect_tax.gstr1_zoho import process_gstr1_zoho
 from modules.indirect_tax.gstr2b_reco_engine import generate_reco_report
 from modules.indirect_tax.gstr2b_reco_zoho_engine import generate_reco_report_zoho, generate_gstr3b_zoho_report
 from modules.indirect_tax.gstr3b_engine import generate_gstr3b_report
+from modules.gstr9.gstr9_reco_engine import process_gstr9_reco
 
 app = Flask(__name__)
 init_db(app)
@@ -642,6 +643,46 @@ def run_gstr3b_zoho():
     finally:
         for fp in saved_gstr1_paths.values():
             if os.path.exists(fp): os.remove(fp)
+
+# ==========================================
+#  GSTR-9 (ANNUAL THREE-WAY RECONCILIATION)
+# ==========================================
+@app.route('/api/gstr9/reco', methods=['POST'])
+@require_auth
+def run_gstr9_reco():
+    try:
+        for key in ('file_books', 'file_2b', 'file_3b'):
+            f = request.files.get(key)
+            if not f or f.filename == '':
+                return jsonify({'error': 'All three files (Books, 2B/8A, 3B) are required.'}), 400
+
+        control_totals = None
+        raw = request.form.get('control_totals')
+        if raw:
+            try:
+                control_totals = json.loads(raw)
+            except (TypeError, ValueError):
+                return jsonify({'error': 'Invalid control totals data.'}), 400
+
+        custom_name = (request.form.get('custom_name') or 'GSTR9 Reconciliation').strip()
+
+        excel_file = process_gstr9_reco(
+            request.files['file_books'],
+            request.files['file_2b'],
+            request.files['file_3b'],
+            control_totals=control_totals,
+        )
+
+        return send_file(
+            excel_file,
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            download_name=f'{custom_name}.xlsx',
+            as_attachment=True
+        )
+
+    except Exception as e:
+        print(f"GSTR-9 Reco Error: {e}")
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
     app.run(port=5000)
