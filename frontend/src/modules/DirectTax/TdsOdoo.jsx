@@ -9,6 +9,7 @@ export default function TdsOdoo() {
   const [status, setStatus] = useState('idle');
   const [message, setMessage] = useState('');
   const [downloadUrl, setDownloadUrl] = useState(null);
+  const [finalFileName, setFinalFileName] = useState('');
   const [summaryData, setSummaryData] = useState([]);
 
   const handleFileChange = (e) => {
@@ -48,6 +49,7 @@ export default function TdsOdoo() {
         const fileRes = await apiFetch(data.download_url);
         const blob = await fileRes.blob();
         setDownloadUrl(window.URL.createObjectURL(blob));
+        setFinalFileName(data.filename || 'TDS_Working.xlsx');
         setSummaryData(data.summary_data || []);
       } else {
         setStatus('error');
@@ -119,7 +121,7 @@ export default function TdsOdoo() {
             <div className="absolute top-0 left-0 w-full h-1 bg-emerald-500" />
             <CheckCircle className="w-10 h-10 text-emerald-400 mb-3" />
             <h3 className="text-lg font-semibold text-neutral-50 mb-1">Done</h3>
-            <a href={downloadUrl} className="w-full mt-4 flex items-center justify-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold rounded-lg transition-colors shadow-lg shadow-indigo-500/10">
+            <a href={downloadUrl} download={finalFileName} className="w-full mt-4 flex items-center justify-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold rounded-lg transition-colors shadow-lg shadow-indigo-500/10">
               <Download className="w-4 h-4" /> Download
             </a>
           </Card>
@@ -132,7 +134,9 @@ export default function TdsOdoo() {
               <table className="w-full text-left text-sm">
                 <thead className="bg-black/20 text-neutral-500 text-xs uppercase">
                   <tr>
-                    <th className="p-4 font-medium">Section</th>
+                    <th className="p-4 font-medium">Old Section</th>
+                    <th className="p-4 font-medium">New Section</th>
+                    <th className="p-4 font-medium">Code</th>
                     <th className="p-4 font-medium">Type</th>
                     <th className="p-4 text-right font-medium">TDS Amount</th>
                     <th className="p-4 text-right font-medium">Interest</th>
@@ -140,8 +144,10 @@ export default function TdsOdoo() {
                 </thead>
                 <tbody className="divide-y divide-white/[0.06]">
                   {summaryData.map((row, idx) => (
-                    <tr key={idx} className={`transition-colors hover:bg-white/[0.02] ${row.Section === 'Total' ? 'font-semibold bg-black/10 text-indigo-400' : 'text-neutral-300'}`}>
-                      <td className="p-4">{row.Section}</td>
+                    <tr key={idx} className={`transition-colors hover:bg-white/[0.02] ${row['Old Section'] === 'Total' ? 'font-semibold bg-black/10 text-indigo-400' : 'text-neutral-300'}`}>
+                      <td className="p-4">{row['Old Section']}</td>
+                      <td className="p-4 text-neutral-400">{row['New Section'] || '—'}</td>
+                      <td className="p-4 text-neutral-400">{row['Section Code'] || '—'}</td>
                       <td className="p-4">{row['Co./Non Co.'] || '-'}</td>
                       <td className="p-4 text-right font-mono">₹{row['Total Tax Deducted'].toLocaleString()}</td>
                       <td className="p-4 text-right font-mono">₹{row['Total Interest'].toLocaleString()}</td>
