@@ -512,6 +512,83 @@ def reconcile_dataframe(df, candidates, target_col_name, is_portal_sheet, reco_m
     return df
 
 # ==========================================
+#  ITC AVAILABILITY MERGE (same concept as the Odoo reco engine's
+#  apply_itc_availability -- GSTR-2B's portal export puts eligibility info in
+#  dedicated sheets rather than a column, so the sheet name itself is the
+#  category)
+# ==========================================
+
+ITC_AVAILABILITY_LABELS = {
+    "ITC Available": "Yes",
+    "ITC not available": "No",
+    "ITC Reversal": "Reversal",
+    "ITC Rejected": "Rejected",
+}
+
+def apply_itc_availability_zoho(processed_portal, reference_sheets):
+    availability_map = {}
+    for sheet_name, df in reference_sheets.items():
+        label = ITC_AVAILABILITY_LABELS.get(sheet_name.strip())
+        if not label: continue
+        col_gstin = next((c for c in df.columns if 'gstin' in c.lower()), None)
+        if not col_gstin or 'Invoice Number' not in df.columns: continue
+        for _, row in df.iterrows():
+            inv = clean_inv_str(row['Invoice Number'])
+            if inv:
+                availability_map[(clean_gstin(row[col_gstin]), inv)] = label
+
+    if not availability_map:
+        for df in processed_portal.values():
+            df['ITC Availability'] = ''
+        return processed_portal
+
+    for df in processed_portal.values():
+        col_gstin = next((c for c in df.columns if 'gstin' in c.lower()), None)
+        if not col_gstin or 'Invoice Number' not in df.columns:
+            df['ITC Availability'] = ''
+            continue
+        df['ITC Availability'] = [
+            availability_map.get((clean_gstin(g), clean_inv_str(inv)), '')
+            for g, inv in zip(df[col_gstin], df['Invoice Number'])
+        ]
+    return processed_portal
+
+# ==========================================
+#  COMPUTE (shared by the standalone reco report and by
+#  generate_gstr3b_zoho_report, which needs the reconciled DataFrames
+#  directly rather than a finished Excel file to re-parse)
+# ==========================================
+
+def compute_reco_data_zoho(file_portal, file_zoho, month_str=None):
+    """Runs the full portal-vs-Zoho reconciliation and returns
+    (processed_portal, zoho_data, reference_sheets) as DataFrames -- no
+    Excel writing. processed_portal sheets have an 'ITC Availability' column
+    merged in from the reference sheets, same as the Odoo reco engine."""
+    reco_dt = None
+    if month_str:
+        try:
+            reco_dt = pd.to_datetime(month_str + "-01")
+        except (ValueError, TypeError) as e:
+            logging.warning(f"Could not parse reconciliation month '{month_str}': {e}")
+
+    portal_data, reference_sheets = clean_portal_data(file_portal)
+    zoho_data = clean_zoho_data(file_zoho)
+
+    books_maps = generate_lookup_maps(zoho_data)
+    portal_maps = generate_lookup_maps(portal_data)
+
+    processed_portal_dfs = {}
+    for sheet, df in portal_data.items():
+        processed_portal_dfs[sheet] = reconcile_dataframe(df, books_maps, 'As per Books', True, reco_dt)
+
+    for key, data in zoho_data.items():
+        data['df'] = reconcile_dataframe(data['df'], portal_maps, 'As per Portal', False)
+
+    processed_portal_dfs = apply_itc_availability_zoho(processed_portal_dfs, reference_sheets)
+
+    return processed_portal_dfs, zoho_data, reference_sheets
+
+# ==========================================
 #  DASHBOARD & REPORTS
 # ==========================================
 
@@ -885,37 +962,9 @@ def generate_reco_report_zoho(file_portal, file_zoho, manual_inputs=None, month_
     route never sets these, so its behavior is unchanged.
     """
     output = BytesIO()
-
-    # NOTE: this used to be hardcoded to None, which meant "Previous Period"
-    # detection could never fire even though the frontend already sends a
-    # reconciliation month -- app.py just wasn't reading it. Now parsed
-    # properly, same as the Odoo reco engine.
-    reco_dt = None
-    if month_str:
-        try:
-            reco_dt = pd.to_datetime(month_str + "-01")
-        except (ValueError, TypeError) as e:
-            logging.warning(f"Could not parse reconciliation month '{month_str}': {e}")
+    processed_portal_dfs, zoho_data, reference_sheets = compute_reco_data_zoho(file_portal, file_zoho, month_str)
 
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-        # 1. Clean Data
-        portal_data, reference_sheets = clean_portal_data(file_portal)
-        zoho_data = clean_zoho_data(file_zoho)
-
-        # 2. Generate Maps
-        books_maps = generate_lookup_maps(zoho_data)
-        portal_maps = generate_lookup_maps(portal_data)
-
-        # 3. Process Portal Data
-        processed_portal_dfs = {}
-        for sheet, df in portal_data.items():
-            df_res = reconcile_dataframe(df, books_maps, 'As per Books', True, reco_dt)
-            processed_portal_dfs[sheet] = df_res
-
-        # 4. Process Books Data
-        for key, data in zoho_data.items():
-            data['df'] = reconcile_dataframe(data['df'], portal_maps, 'As per Portal', False)
-
         # 5. Generate Summaries
         closing_balance = generate_master_dashboard(writer, processed_portal_dfs, zoho_data, manual_inputs)
         generate_vendor_summary(writer, processed_portal_dfs, zoho_data)
@@ -939,19 +988,412 @@ def generate_reco_report_zoho(file_portal, file_zoho, manual_inputs=None, month_
 
 
 # ==========================================
+#  GSTR-3B WORKING PAPER, ODOO-STYLE (per CA's explicit direction: the Odoo
+#  working paper -- see gstr3b_engine.py -- is the gold standard, and Zoho's
+#  3B output should match its layout and Section 49 offset math, not the
+#  standalone reconciliation tool's "Master Dashboard"/calculate_smart_offset
+#  above (that function is untouched and still backs the plain
+#  /reco-gstr2b-zoho tool).
+#
+#  One real data-shape difference from Odoo: Zoho's GSTR-1 export nets
+#  Invoices+Credit Notes into a single aggregate figure rather than Odoo's
+#  B2B/B2B CDNR/B2C/B2C CDNR split (see gstr1_zoho.compute_gstr1_zoho_data's
+#  docstring) -- so the "GSTR1 SUMMARY" sheet below has one SALES row
+#  instead of 4 categories. This isn't a design choice, it's what Zoho's own
+#  export actually contains.
+#
+#  Zoho ledger account names for the JV section (given by the CA -- Zoho
+#  doesn't share Odoo's chart-of-accounts codes): "Output IGST/CGST/SGST"
+#  for output liability, "Input IGST/CGST/SGST" for ITC, "Cash Ledger -
+#  IGST/CGST/SGST Tax" for cash paid. RCM liability/ITC route through the
+#  same Output/Input accounts (no separate RCM ledger was given) -- flag
+#  this to the CA if that's wrong for a specific client's chart of accounts.
+# ==========================================
+
+ZOHO_ACCOUNTS = {
+    'igst_payable': 'Output IGST', 'cgst_payable': 'Output CGST', 'sgst_payable': 'Output SGST',
+    'igst_receivable': 'Input IGST', 'cgst_receivable': 'Input CGST', 'sgst_receivable': 'Input SGST',
+    'igst_cash': 'Cash Ledger - IGST Tax', 'cgst_cash': 'Cash Ledger - CGST Tax', 'sgst_cash': 'Cash Ledger - SGST Tax',
+}
+
+MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June',
+               'July', 'August', 'September', 'October', 'November', 'December']
+
+
+def _is_claimable_remark_zoho(remark):
+    r = str(remark or '').lower()
+    return 'match' in r and 'mismatch' not in r and 'previous period' not in r
+
+def _is_previous_period_input_zoho(remark):
+    return 'previous period' in str(remark or '').lower()
+
+def _is_itc_available_zoho(value):
+    return str(value or '').strip().lower() == 'yes'
+
+def _find_sheet_zoho(sheets, name, is_books=False):
+    target = name.strip().lower()
+    for k, v in sheets.items():
+        if str(k).strip().lower() == target:
+            return v['df'] if is_books else v
+    return None
+
+def _sum4_zoho(df):
+    if df is None or df.empty:
+        return {'taxable': 0.0, 'igst': 0.0, 'cgst': 0.0, 'sgst': 0.0}
+    def s(col):
+        return float(pd.to_numeric(df[col], errors='coerce').fillna(0).sum()) if col in df.columns else 0.0
+    return {'taxable': s('Taxable Value'), 'igst': s('IGST Tax Amount'), 'cgst': s('CGST Tax Amount'), 'sgst': s('SGST Tax Amount')}
+
+
+def compute_gstr2b_buckets_zoho(processed_portal, zoho_data):
+    """Returns the 4 GSTR2B SUMMARY category rows (current month B2B claimed,
+    previous period input, credit note claimed, RCM), plus the underlying
+    filtered rows for the supporting detail block -- same shape as the Odoo
+    engine's compute_gstr2b_buckets. RCM comes from Zoho's own "Reverse
+    Charge" books sheet (the whole sheet, unfiltered -- same as the Odoo
+    engine takes the entire RCM books sheet as claimable rather than
+    filtering by Remarks/ITC Availability)."""
+    b2b_portal = _find_sheet_zoho(processed_portal, 'B2B')
+    cdnr_portal = _find_sheet_zoho(processed_portal, 'B2B-CDNR')
+    rcm_books = _find_sheet_zoho(zoho_data, 'Reverse Charge', is_books=True)
+
+    def filter_rows(df, remark_predicate):
+        if df is None or df.empty or 'Remarks' not in df.columns or 'ITC Availability' not in df.columns:
+            return pd.DataFrame()
+        mask = df['Remarks'].apply(remark_predicate) & df['ITC Availability'].apply(_is_itc_available_zoho)
+        return df[mask]
+
+    bucket_a_rows = filter_rows(b2b_portal, _is_claimable_remark_zoho)
+    bucket_b_rows = filter_rows(b2b_portal, _is_previous_period_input_zoho)
+    bucket_c_rows = filter_rows(cdnr_portal, _is_claimable_remark_zoho)
+    bucket_d_rows = rcm_books if rcm_books is not None else pd.DataFrame()
+
+    return {
+        'current_month_b2b': _sum4_zoho(bucket_a_rows),
+        'previous_month_input': _sum4_zoho(bucket_b_rows),
+        'credit_note': _sum4_zoho(bucket_c_rows),
+        'rcm': _sum4_zoho(bucket_d_rows),
+        'detail_rows': {
+            'current_month_b2b': bucket_a_rows, 'previous_month_input': bucket_b_rows,
+            'credit_note': bucket_c_rows, 'rcm': bucket_d_rows,
+        },
+    }
+
+
+def compute_3b_totals_zoho(sales, gstr2b_buckets, opening_itc):
+    """The Section 49 offset math -- IGST credit offsets IGST liability
+    first (uncapped, matching the real working paper's own formula), then
+    the *remainder* splits 50/50 into CGST/SGST usage. Identical rule to
+    gstr3b_engine.compute_3b_totals (Odoo), just with `sales` already a
+    single flat dict instead of 4 GSTR-1 categories to net down (Zoho's
+    export nets Invoices+Credit Notes itself -- see module docstring
+    above)."""
+    current_month_itc = {
+        head: (gstr2b_buckets['current_month_b2b'][head] + gstr2b_buckets['previous_month_input'][head]
+               - gstr2b_buckets['credit_note'][head] + gstr2b_buckets['rcm'][head])
+        for head in ('igst', 'cgst', 'sgst')
+    }
+    total_available = {head: opening_itc[head] + current_month_itc[head] for head in ('igst', 'cgst', 'sgst')}
+
+    sales_igst, sales_cgst, sales_sgst = sales['igst'], sales['cgst'], sales['sgst']
+    rcm = gstr2b_buckets['rcm']
+
+    igst_used_on_igst = sales_igst
+    igst_remainder = total_available['igst'] - igst_used_on_igst
+    igst_used_on_cgst = igst_remainder / 2
+    igst_used_on_sgst = igst_remainder / 2
+
+    cgst_liability_after_igst = sales_cgst - igst_used_on_cgst
+    sgst_liability_after_igst = sales_sgst - igst_used_on_sgst
+    cgst_itc_used = min(total_available['cgst'], max(cgst_liability_after_igst, 0))
+    sgst_itc_used = min(total_available['sgst'], max(sgst_liability_after_igst, 0))
+
+    cash_payable = {
+        'igst': max(sales_igst - igst_used_on_igst + rcm['igst'], 0),
+        'cgst': max(cgst_liability_after_igst - cgst_itc_used + rcm['cgst'], 0),
+        'sgst': max(sgst_liability_after_igst - sgst_itc_used + rcm['sgst'], 0),
+    }
+    remaining_itc = {
+        'igst': total_available['igst'] - (igst_used_on_igst + igst_used_on_cgst + igst_used_on_sgst),
+        'cgst': total_available['cgst'] - cgst_itc_used,
+        'sgst': total_available['sgst'] - sgst_itc_used,
+    }
+
+    return {
+        'current_month_itc': current_month_itc,
+        'total_available_itc': total_available,
+        'sales_liability': {'igst': sales_igst, 'cgst': sales_cgst, 'sgst': sales_sgst},
+        'offset': {
+            'igst_used_on_igst': igst_used_on_igst, 'igst_used_on_cgst': igst_used_on_cgst, 'igst_used_on_sgst': igst_used_on_sgst,
+            'cgst_itc_used': cgst_itc_used, 'sgst_itc_used': sgst_itc_used,
+        },
+        'cash_payable': cash_payable,
+        'net_payable_cash': sum(cash_payable.values()) - (rcm['igst'] + rcm['cgst'] + rcm['sgst']),
+        'remaining_itc': remaining_itc,
+    }
+
+
+def write_gstr1_summary_sheet_zoho(writer, sales):
+    """Single SALES row (not Odoo's 4-category split -- see module docstring)."""
+    wb = writer.book
+    ws = wb.add_worksheet("GSTR1 SUMMARY")
+    writer.sheets["GSTR1 SUMMARY"] = ws
+    bold = wb.add_format({'bold': True})
+    num = wb.add_format({'num_format': '#,##0.00'})
+    num_bold = wb.add_format({'bold': True, 'num_format': '#,##0.00'})
+
+    ws.set_column(0, 0, 16); ws.set_column(1, 4, 16)
+    ws.write_row(0, 0, ['NATURE', 'TAXABLE VALUE', 'IGST', 'CGST', 'SGST'], bold)
+    ws.write(1, 0, 'SALES')
+    ws.write(1, 1, sales['taxable'], num)
+    ws.write(1, 2, sales['igst'], num)
+    ws.write(1, 3, sales['cgst'], num)
+    ws.write(1, 4, sales['sgst'], num)
+    ws.write(2, 0, 'TOTAL', bold)
+    ws.write_formula(2, 1, "=B2", num_bold)
+    ws.write_formula(2, 2, "=C2", num_bold)
+    ws.write_formula(2, 3, "=D2", num_bold)
+    ws.write_formula(2, 4, "=E2", num_bold)
+
+
+def write_gstr2b_summary_sheet_zoho(writer, buckets):
+    """Same shape as the Odoo engine's write_gstr2b_summary_sheet -- 4
+    category rows, a live FINAL ITC formula, and the supporting detail rows
+    beneath."""
+    wb = writer.book
+    ws = wb.add_worksheet("GSTR2B SUMMARY")
+    writer.sheets["GSTR2B SUMMARY"] = ws
+    bold = wb.add_format({'bold': True})
+    num = wb.add_format({'num_format': '#,##0.00'})
+    num_bold = wb.add_format({'bold': True, 'num_format': '#,##0.00'})
+
+    ws.set_column(0, 0, 55); ws.set_column(1, 4, 16)
+    ws.write_row(0, 0, ['PARTICULARS', 'TAXABLE VALUE', 'IGST', 'CGST', 'SGST'], bold)
+
+    rows = [
+        ('CURRENT MONTH B2B PURCHASE CLAIMED', buckets['current_month_b2b']),
+        ('PREVIOUS PERIOD B2B PURCHASE REFLECTING IN THIS MONTH CLAIMED', buckets['previous_month_input']),
+        ('CURRENT MONTH B2B CREDIT NOTE CLAIMED', buckets['credit_note']),
+        ('CURRENT MONTH RCM (BOOKS)', buckets['rcm']),
+    ]
+    for i, (label, vals) in enumerate(rows):
+        r = i + 1
+        ws.write(r, 0, label)
+        ws.write(r, 1, vals['taxable'], num)
+        ws.write(r, 2, vals['igst'], num)
+        ws.write(r, 3, vals['cgst'], num)
+        ws.write(r, 4, vals['sgst'], num)
+
+    ws.write(5, 0, 'FINAL ITC', bold)
+    ws.write_formula(5, 1, "=B2+B3-B4+B5", num_bold)
+    ws.write_formula(5, 2, "=C2+C3-C4+C5", num_bold)
+    ws.write_formula(5, 3, "=D2+D3-D4+D5", num_bold)
+    ws.write_formula(5, 4, "=E2+E3-E4+E5", num_bold)
+
+    start = 9
+    for label, key in [('CURRENT MONTH B2B PURCHASE CLAIMED', 'current_month_b2b'),
+                        ('PREVIOUS PERIOD B2B PURCHASE REFLECTING IN THIS MONTH CLAIMED', 'previous_month_input'),
+                        ('CURRENT MONTH B2B CREDIT NOTE CLAIMED', 'credit_note'),
+                        ('CURRENT MONTH RCM (BOOKS)', 'rcm')]:
+        df = buckets['detail_rows'][key]
+        if df is None or df.empty: continue
+        ws.write(start, 0, label, bold)
+        df.to_excel(writer, sheet_name="GSTR2B SUMMARY", index=False, startrow=start + 1)
+        start = start + 1 + len(df) + 3
+
+
+def write_3b_summary_sheet_zoho(writer, sales, gstr2b_buckets, opening_itc, totals, period_label):
+    """Odoo-style '3B SUMMARY' layout (ITC Before Filing / GSTR1+GST2B cross-
+    reference block / GST3B offset table / ITC After Filing / JV), adapted
+    for Zoho's account names and single-row GSTR-1 shape.
+
+    The cross-sheet totals (opening+current=total, sales+RCM=total
+    liability) are live formulas, same as Odoo. The Section 49 offset table
+    and JV section use the numbers from compute_3b_totals_zoho (already
+    unit-tested against hand-verified figures) rather than a hand-authored
+    formula chain -- there's no Excel engine available in this environment
+    to verify a long interconnected formula chain end-to-end, and that
+    exact class of hardcoded-cross-reference bug is what was just fixed in
+    the Master Dashboard. This matches the CA's own real working paper,
+    where the equivalent derived totals (GSTR2B SUMMARY's category rows)
+    are pasted values too, not live formulas."""
+    wb = writer.book
+    ws = wb.add_worksheet("3B SUMMARY")
+    writer.sheets["3B SUMMARY"] = ws
+
+    bold = wb.add_format({'bold': True})
+    header = wb.add_format({'bold': True, 'bg_color': '#2F4F4F', 'font_color': 'white'})
+    num = wb.add_format({'num_format': '#,##0.00'})
+    num_bold = wb.add_format({'bold': True, 'num_format': '#,##0.00'})
+    green = wb.add_format({'bold': True, 'bg_color': '#C6EFCE', 'font_color': '#006100', 'num_format': '#,##0.00'})
+    red = wb.add_format({'bold': True, 'bg_color': '#FFC7CE', 'font_color': '#9C0006', 'num_format': '#,##0.00'})
+
+    ws.set_column(1, 15, 16); ws.set_column(3, 3, 34); ws.set_column(6, 6, 32)
+
+    R = lambda excel_row: excel_row - 1
+    C = lambda letter: ord(letter) - ord('A')
+
+    # --- ITC BEFORE FILING ---
+    ws.write(R(2), C('G'), 'ITC BEFORE FILING', header)
+    ws.write_row(R(3), C('G'), ['PARTICULARS', 'IGST', 'CGST', 'SGST'], bold)
+    ws.write(R(4), C('G'), 'OPENING ITC')
+    ws.write(R(4), C('H'), opening_itc['igst'], num)
+    ws.write(R(4), C('I'), opening_itc['cgst'], num)
+    ws.write(R(4), C('J'), opening_itc['sgst'], num)
+    ws.write(R(5), C('G'), 'CURRENT MONTH ITC')
+    ws.write_formula(R(5), C('H'), "='GSTR2B SUMMARY'!C6", num)
+    ws.write_formula(R(5), C('I'), "='GSTR2B SUMMARY'!D6", num)
+    ws.write_formula(R(5), C('J'), "='GSTR2B SUMMARY'!E6", num)
+    ws.write(R(6), C('G'), 'TOTAL', bold)
+    ws.write_formula(R(6), C('H'), "=SUM(H4:H5)", num_bold)
+    ws.write_formula(R(6), C('I'), "=SUM(I4:I5)", num_bold)
+    ws.write_formula(R(6), C('J'), "=SUM(J4:J5)", num_bold)
+
+    # --- GSTR1 SUMMARY / GST2B SUMMARY side by side ---
+    ws.write(R(8), C('B'), 'GSTR1 SUMMARY', header)
+    ws.write(R(8), C('K'), 'GST2B SUMMARY', header)
+    ws.write_row(R(9), C('B'), ['PARTICULARS', 'TAXABLE VALUE', 'IGST', 'CGST', 'SGST'], bold)
+    ws.write_row(R(9), C('K'), ['PARTICULARS', 'TAXABLE VALUE', 'IGST', 'CGST', 'SGST', 'TOTAL'], bold)
+
+    ws.write(R(10), C('B'), 'SALES')
+    ws.write_formula(R(10), C('C'), "='GSTR1 SUMMARY'!B2", num)
+    ws.write_formula(R(10), C('D'), "='GSTR1 SUMMARY'!C2", num)
+    ws.write_formula(R(10), C('E'), "='GSTR1 SUMMARY'!D2", num)
+    ws.write_formula(R(10), C('F'), "='GSTR1 SUMMARY'!E2", num)
+    ws.write(R(10), C('K'), 'ITC OTHER THAN RCM')
+    ws.write_formula(R(10), C('L'), "='GSTR2B SUMMARY'!B2+'GSTR2B SUMMARY'!B3-'GSTR2B SUMMARY'!B4", num)
+    ws.write_formula(R(10), C('M'), "='GSTR2B SUMMARY'!C2+'GSTR2B SUMMARY'!C3-'GSTR2B SUMMARY'!C4", num)
+    ws.write_formula(R(10), C('N'), "='GSTR2B SUMMARY'!D2+'GSTR2B SUMMARY'!D3-'GSTR2B SUMMARY'!D4", num)
+    ws.write_formula(R(10), C('O'), "='GSTR2B SUMMARY'!E2+'GSTR2B SUMMARY'!E3-'GSTR2B SUMMARY'!E4", num)
+    ws.write_formula(R(10), C('P'), "=M10+N10+O10", num)
+
+    ws.write(R(11), C('B'), 'RCM')
+    ws.write_formula(R(11), C('C'), "='GSTR2B SUMMARY'!B5", num)
+    ws.write_formula(R(11), C('D'), "='GSTR2B SUMMARY'!C5", num)
+    ws.write_formula(R(11), C('E'), "='GSTR2B SUMMARY'!D5", num)
+    ws.write_formula(R(11), C('F'), "='GSTR2B SUMMARY'!E5", num)
+    ws.write(R(11), C('K'), 'RCM')
+    ws.write_formula(R(11), C('L'), "=C11", num)
+    ws.write_formula(R(11), C('M'), "=D11", num)
+    ws.write_formula(R(11), C('N'), "=E11", num)
+    ws.write_formula(R(11), C('O'), "=F11", num)
+    ws.write_formula(R(11), C('P'), "=M11+N11+O11", num)
+
+    ws.write(R(12), C('B'), 'TOTAL', bold)
+    ws.write_formula(R(12), C('C'), "=C10+C11", num_bold)
+    ws.write_formula(R(12), C('D'), "=D10+D11", num_bold)
+    ws.write_formula(R(12), C('E'), "=E10+E11", num_bold)
+    ws.write_formula(R(12), C('F'), "=F10+F11", num_bold)
+    ws.write(R(12), C('K'), 'TOTAL', bold)
+    ws.write_formula(R(12), C('L'), "=L10+L11", num_bold)
+    ws.write_formula(R(12), C('M'), "=M10+M11", num_bold)
+    ws.write_formula(R(12), C('N'), "=N10+N11", num_bold)
+    ws.write_formula(R(12), C('O'), "=O10+O11", num_bold)
+    ws.write_formula(R(12), C('P'), "=P10+P11", num_bold)
+
+    # --- GST3B SUMMARY (Section 49 offset -- reviewed Python values, see docstring) ---
+    ws.write(R(15), C('D'), 'GST3B SUMMARY', header)
+    ws.write_row(R(16), C('H'), ['PAID THROUGH ITC'], bold)
+    ws.write(R(16), C('K'), 'PAYABLE IN CASH', bold)
+    ws.write_row(R(17), C('E'), ['SALES', 'RCM'], bold)
+    ws.write_row(R(17), C('H'), ['IGST', 'CGST', 'SGST'], bold)
+
+    off = totals['offset']; cash = totals['cash_payable']; sales_liab = totals['sales_liability']
+    rcm = gstr2b_buckets['rcm']
+
+    ws.write(R(18), C('D'), 'IGST')
+    ws.write(R(18), C('E'), sales_liab['igst'], num)
+    ws.write(R(18), C('F'), rcm['igst'], num)
+    ws.write(R(18), C('H'), off['igst_used_on_igst'], num)
+    ws.write(R(18), C('K'), cash['igst'], num)
+
+    ws.write(R(19), C('D'), 'CGST')
+    ws.write(R(19), C('E'), sales_liab['cgst'], num)
+    ws.write(R(19), C('F'), rcm['cgst'], num)
+    ws.write(R(19), C('H'), off['igst_used_on_cgst'], num)
+    ws.write(R(19), C('I'), off['cgst_itc_used'], num)
+    ws.write(R(19), C('K'), cash['cgst'], num)
+
+    ws.write(R(20), C('D'), 'SGST')
+    ws.write(R(20), C('E'), sales_liab['sgst'], num)
+    ws.write(R(20), C('F'), rcm['sgst'], num)
+    ws.write(R(20), C('H'), off['igst_used_on_sgst'], num)
+    ws.write(R(20), C('J'), off['sgst_itc_used'], num)
+    ws.write(R(20), C('K'), cash['sgst'], num)
+
+    ws.write_formula(R(21), C('E'), "=E20+E19+E18", num_bold)
+    ws.write_formula(R(21), C('F'), "=F20+F19+F18", num_bold)
+    ws.write_formula(R(21), C('H'), "=SUM(H18:H20)", num_bold)
+    ws.write_formula(R(21), C('I'), "=SUM(I18:I20)", num_bold)
+    ws.write_formula(R(21), C('J'), "=SUM(J18:J20)", num_bold)
+    ws.write_formula(R(21), C('K'), "=SUM(K18:K20)", num_bold)
+
+    ws.write_formula(R(22), C('E'), "=E21+F21", num_bold)
+    ws.write_formula(R(22), C('G'), "=H21+I21+J21", num_bold)
+    ws.write_formula(R(22), C('K'), "=K21", red)
+
+    # --- ITC AFTER FILING ---
+    ws.write(R(24), C('G'), 'ITC AFTER FILING', header)
+    ws.write_row(R(25), C('G'), ['PARTICULARS', 'IGST', 'CGST', 'SGST'], bold)
+    ws.write(R(26), C('G'), 'AVAILABLE ITC INCLUDING CURRENT MONTH')
+    ws.write_formula(R(26), C('H'), "=H5", num)
+    ws.write_formula(R(26), C('I'), "=I5", num)
+    ws.write_formula(R(26), C('J'), "=J5", num)
+    ws.write(R(27), C('G'), 'UTILISED IN CURRENT MONTH')
+    ws.write_formula(R(27), C('H'), "=H18+H19+H20", num)
+    ws.write_formula(R(27), C('I'), "=I19", num)
+    ws.write_formula(R(27), C('J'), "=J20", num)
+    ws.write(R(28), C('G'), 'REMAINING ITC', bold)
+    ws.write_formula(R(28), C('H'), "=H26-H27", green)
+    ws.write_formula(R(28), C('I'), "=I26-I27", green)
+    ws.write_formula(R(28), C('J'), "=J26-J27", green)
+
+    # --- 3B JV (Zoho ledger account names given by the CA) ---
+    ws.write(R(30), C('D'), f'3B JV FOR THE MONTH OF {period_label.upper()}', header)
+    ws.write_row(R(31), C('D'), ['PARTICULARS'], bold)
+    ws.write_row(R(31), C('I'), ['DEBIT', 'CREDIT'], bold)
+
+    # RCM's ITC effect is already folded into `off` (it's part of the ITC
+    # pool used to offset sales liability -- see compute_3b_totals_zoho), and
+    # RCM's cash-only requirement is already folded into `cash` (RCM can
+    # never be offset by ITC, only paid in cash, per Section 49). So the
+    # Input (ITC) rows below use `off` alone, not `off + rcm` -- adding rcm
+    # again here would double-count it and unbalance the JV (verified: with
+    # `off` alone, debit total = sum(sales_liab)+sum(rcm) = credit total).
+    jv_rows = [
+        (32, ZOHO_ACCOUNTS['igst_payable'], 'I', sales_liab['igst'] + rcm['igst']),
+        (33, ZOHO_ACCOUNTS['cgst_payable'], 'I', sales_liab['cgst'] + rcm['cgst']),
+        (34, ZOHO_ACCOUNTS['sgst_payable'], 'I', sales_liab['sgst'] + rcm['sgst']),
+        (35, ZOHO_ACCOUNTS['igst_receivable'], 'J', off['igst_used_on_igst'] + off['igst_used_on_cgst'] + off['igst_used_on_sgst']),
+        (36, ZOHO_ACCOUNTS['cgst_receivable'], 'J', off['cgst_itc_used']),
+        (37, ZOHO_ACCOUNTS['sgst_receivable'], 'J', off['sgst_itc_used']),
+        (38, ZOHO_ACCOUNTS['igst_cash'], 'J', cash['igst']),
+        (39, ZOHO_ACCOUNTS['cgst_cash'], 'J', cash['cgst']),
+        (40, ZOHO_ACCOUNTS['sgst_cash'], 'J', cash['sgst']),
+    ]
+    for excel_row, account, col, value in jv_rows:
+        ws.write(R(excel_row), C('D'), account)
+        ws.write(R(excel_row), C(col), value, num)
+
+    ws.write_formula(R(41), C('I'), "=SUM(I32:I40)", num_bold)
+    ws.write_formula(R(41), C('J'), "=SUM(J32:J40)", num_bold)
+    ws.write_formula(R(42), C('J'), "=J41-I41", bold)
+
+
+# ==========================================
 #  FULL GSTR-3B WORKING PAPER (GSTR-1 + GSTR-2B + auto opening/closing ITC)
 # ==========================================
 
 def generate_gstr3b_zoho_report(gstr1_file_paths_dict, file_portal, file_zoho,
                                  owner_user_id, client_name, period, opening_itc_override=None,
                                  manual_sales=None):
-    """Wraps generate_reco_report_zoho with the two pieces that used to be
-    manual entry: 'sales' figures come from real GSTR-1 Zoho files instead
-    of typed-in numbers, and opening ITC auto-carries from last period's
-    closing balance (falling back to 0 for a client's first run, or the
-    explicit override if given). The Section 49 offset math itself
-    (calculate_smart_offset) is untouched -- it's the same logic already
-    used by the standalone reconciliation tool.
+    """Builds the GSTR-3B working paper in the same layout/offset-math as
+    the Odoo engine (gstr3b_engine.py) -- 3B SUMMARY / GSTR2B SUMMARY /
+    GSTR1 SUMMARY sheets plus the reconciliation detail sheets -- per the
+    CA's direction that the Odoo working paper is the gold standard. This
+    replaces the previous behavior of reusing generate_reco_report_zoho's
+    "Master Dashboard" (calculate_smart_offset), which remains unchanged
+    and still backs the standalone /reco-gstr2b-zoho tool.
 
     manual_sales: when provided (dict with taxable/igst/cgst/sgst, CA-entered
     totals), this skips GSTR-1 file parsing entirely -- for whenever Zoho's
@@ -978,9 +1420,31 @@ def generate_gstr3b_zoho_report(gstr1_file_paths_dict, file_portal, file_zoho,
 
     opening = get_opening_itc(owner_user_id, client_name, period, opening_itc_override)
 
-    manual_inputs = {'sales': sales, 'opening': opening}
+    output = BytesIO()
+    processed_portal_dfs, zoho_data, reference_sheets = compute_reco_data_zoho(file_portal, file_zoho, period)
+    gstr2b_buckets = compute_gstr2b_buckets_zoho(processed_portal_dfs, zoho_data)
+    totals = compute_3b_totals_zoho(sales, gstr2b_buckets, opening)
 
-    return generate_reco_report_zoho(
-        file_portal, file_zoho, manual_inputs, period,
-        owner_user_id=owner_user_id, client_name=client_name, save_balance=True,
-    )
+    year, month = (int(x) for x in period.split('-'))
+    period_label = f"{MONTH_NAMES[month - 1]} {year}"
+
+    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+        write_3b_summary_sheet_zoho(writer, sales, gstr2b_buckets, opening, totals, period_label)
+        write_gstr2b_summary_sheet_zoho(writer, gstr2b_buckets)
+        write_gstr1_summary_sheet_zoho(writer, sales)
+
+        generate_vendor_summary(writer, processed_portal_dfs, zoho_data)
+        generate_discrepancy_sheets(writer, processed_portal_dfs, zoho_data)
+
+        sorted_sheets = get_smart_sorted_order(processed_portal_dfs, zoho_data)
+        for sheet_name, df in sorted_sheets:
+            add_formatting(writer, df, sheet_name)
+
+        for sheet_name, df in reference_sheets.items():
+            title = f"{sheet_name} (Reference)"[:31]
+            add_formatting(writer, df, title)
+
+    save_closing_itc(owner_user_id, client_name, period, totals['remaining_itc'])
+
+    output.seek(0)
+    return output
