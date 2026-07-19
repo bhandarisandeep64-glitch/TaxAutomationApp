@@ -1,7 +1,58 @@
+import re
 import pandas as pd
 import os
 from modules.excel_styles import style_header_row, style_data_rows, autofit_columns
 from modules.direct_tax.tds_section_mapping import lookup_new_section
+
+# Odoo's Label format changed alongside the Income Tax Act 2025 rollout --
+# real exports now read "New 194H 2%" (section then rate, "New" prefix,
+# no trailing space after the final %), not the older "2% 194C" (rate then
+# section) this parser originally assumed. That old form is kept as a
+# fallback for historical periods that may still carry it.
+_LABEL_NEW_FORMAT_RE = re.compile(r'new\s+(\S+)\s+(\d*\.?\d+)\s*%', re.IGNORECASE)
+_LABEL_LEGACY_FORMAT_RE = re.compile(r'(\d*\.?\d+)\s*%\s+(\S+)')
+
+# Odoo's own Account name now embeds the new section reference and TRACES
+# code directly, e.g. "112456 TDS 393(1)1(ii) - TDS ON COMMISSION/BROKERAGE
+# - 1006" -- self-updating as the client's chart of accounts evolves, so
+# it's used as the primary source for New Section/Section Code here (unlike
+# Zoho, which has no equivalent field and stays on the hardcoded table).
+# Falls back to the shared lookup table when an account name doesn't follow
+# this pattern (e.g. older entries, or an account not yet renamed).
+_ACCOUNT_CODE_RE = re.compile(r'TDS\s+(.+?)\s*-\s*(.+?)\s*-\s*(\d+)\s*$')
+_SECTION_REF_SPACING_RE = re.compile(r'^(\d+\([^)]+\))(\d.*)$')
+
+
+def _parse_label(label):
+    """Returns (old_section, rate) from an Odoo Label string, trying the
+    current format first and falling back to the legacy one."""
+    text = str(label or '')
+    m = _LABEL_NEW_FORMAT_RE.search(text)
+    if m:
+        return m.group(1), float(m.group(2))
+    m = _LABEL_LEGACY_FORMAT_RE.search(text)
+    if m:
+        return m.group(2), float(m.group(1))
+    return 'N/A', None
+
+
+def _format_section_ref(ref):
+    """'393(1)1(ii)' -> '393(1), Sl. 1(ii)', matching the shared lookup
+    table's own formatting so a report doesn't mix two different styles
+    depending on which source resolved a given row. Falls back to the raw
+    text if it doesn't match this two-group shape."""
+    m = _SECTION_REF_SPACING_RE.match(ref)
+    return f"{m.group(1)}, Sl. {m.group(2)}" if m else ref
+
+
+def _parse_account_new_section(account):
+    """Extracts (new_section, code) directly from Odoo's own Account name.
+    Returns (None, None) if the account name doesn't follow the expected
+    pattern, so the caller can fall back to the shared lookup table."""
+    m = _ACCOUNT_CODE_RE.search(str(account or ''))
+    if not m:
+        return None, None
+    return _format_section_ref(m.group(1).strip()), m.group(3).strip()
 
 
 def process_tds_odoo(file_paths, output_folder, custom_filename=None):
@@ -11,11 +62,12 @@ def process_tds_odoo(file_paths, output_folder, custom_filename=None):
     - Appends Summary to the SAME sheet.
 
     Unlike Zoho (one file = one section, from the filename), Odoo's ledger
-    export carries BOTH the rate and the old section as text inside a single
-    "Label" column per row (e.g. "2% 194C") -- so a single upload can mix
-    multiple sections, and Old Section/rate are derived per row rather than
-    per file. New Section/Section Code use the same Income Tax Act 2025
-    mapping as tds_zoho.py (shared via tds_section_mapping.py).
+    export carries the rate and the old section as text inside a single
+    "Label" column per row (e.g. "New 194H 2%") -- so a single upload can
+    mix multiple sections, and Old Section/rate are derived per row rather
+    than per file. New Section/Section Code are read from Odoo's own
+    Account name first (self-updating), falling back to the shared Income
+    Tax Act 2025 lookup table (tds_section_mapping.py) when that fails.
     """
     try:
         all_data = []
@@ -41,8 +93,9 @@ def process_tds_odoo(file_paths, output_folder, custom_filename=None):
             df.rename(columns={'Credit': 'TDS'}, inplace=True)
 
         # --- LOGIC BLOCK ---
-        df['Rates'] = df['Label'].str.extract(r'(\d*\.?\d+)%').astype(float)
-        df['Old Section'] = df['Label'].apply(lambda x: x.split('% ')[1] if isinstance(x, str) and '% ' in x else 'N/A')
+        parsed = df['Label'].apply(_parse_label)
+        df['Old Section'] = parsed.apply(lambda t: t[0])
+        df['Rates'] = parsed.apply(lambda t: t[1])
 
         def get_pan_type(pan):
             pan_str = str(pan)
@@ -62,10 +115,13 @@ def process_tds_odoo(file_paths, output_folder, custom_filename=None):
 
         df['Total After TDS Deduction'] = df['Total'] - df['Tax Deducted at Source']
 
-        # New Section / Section Code (Income Tax Act 2025 mapping)
+        # New Section / Section Code -- Odoo's own Account name first
+        # (self-updating), the shared lookup table as fallback.
         new_sections, section_codes = [], []
         for _, row in df.iterrows():
-            new_sec, code = lookup_new_section(row['Old Section'], row['Rate at which deducted'])
+            new_sec, code = _parse_account_new_section(row.get('Account'))
+            if not new_sec:
+                new_sec, code = lookup_new_section(row['Old Section'], row['Rate at which deducted'])
             new_sections.append(new_sec)
             section_codes.append(code)
         df['New Section'] = new_sections
