@@ -134,7 +134,9 @@ export default function TdsZoho() {
               <table className="w-full text-left text-sm">
                 <thead className="bg-black/20 text-neutral-500 text-xs uppercase">
                   <tr>
-                    <th className="p-4 font-medium">Section</th>
+                    <th className="p-4 font-medium">Old Section</th>
+                    <th className="p-4 font-medium">New Section</th>
+                    <th className="p-4 font-medium">Code</th>
                     <th className="p-4 font-medium">Type</th>
                     <th className="p-4 text-right font-medium">TDS Amount</th>
                     <th className="p-4 text-right font-medium">Interest</th>
@@ -142,8 +144,10 @@ export default function TdsZoho() {
                 </thead>
                 <tbody className="divide-y divide-white/[0.06]">
                   {summaryData.map((row, idx) => (
-                    <tr key={idx} className={`transition-colors hover:bg-white/[0.02] ${row.Section === 'Total' ? 'font-semibold bg-black/10 text-indigo-400' : 'text-neutral-300'}`}>
-                      <td className="p-4">{row.Section}</td>
+                    <tr key={idx} className="transition-colors hover:bg-white/[0.02] text-neutral-300">
+                      <td className="p-4">{row['Old Section']}</td>
+                      <td className="p-4 text-neutral-400">{row['New Section'] || '—'}</td>
+                      <td className="p-4 text-neutral-400">{row['Section Code'] || '—'}</td>
                       <td className="p-4">{row['Co./Non Co.'] || '-'}</td>
                       <td className="p-4 text-right font-mono">₹{row['Total Tax Deducted']?.toLocaleString()}</td>
                       <td className="p-4 text-right font-mono">₹{row['Total Interest']?.toLocaleString()}</td>

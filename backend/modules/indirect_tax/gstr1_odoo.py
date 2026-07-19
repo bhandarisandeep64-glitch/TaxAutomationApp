@@ -3,7 +3,10 @@ import numpy as np
 import re
 import os
 from openpyxl.utils import get_column_letter
-from openpyxl.styles import Font, PatternFill, Border, Side, Alignment
+from modules.excel_styles import (
+    style_header_row, style_data_rows, autofit_columns,
+    TOTAL_FILL, TOTAL_FONT, THIN_BORDER, NUMBER_FORMAT,
+)
 
 # ==========================================
 #  HSN B2B / HSN B2C parser (current Odoo export format)
@@ -61,14 +64,6 @@ from openpyxl.styles import Font, PatternFill, Border, Side, Alignment
 #     rather than silently dropped.
 
 RATE_RE = re.compile(r'(\d+(?:\.\d+)?)\s*%')
-
-HEADER_FILL = PatternFill(start_color="1F3864", end_color="1F3864", fill_type="solid")
-HEADER_FONT = Font(bold=True, color="FFFFFF")
-TOTAL_FILL = PatternFill(start_color="D9E1F2", end_color="D9E1F2", fill_type="solid")
-TOTAL_FONT = Font(bold=True)
-THIN_BORDER = Border(bottom=Side(style='thin', color="BFBFBF"))
-NEGATIVE_FONT = Font(color="C00000")
-NUMBER_FORMAT = '#,##0.00;[Red](#,##0.00)'
 
 
 def _read_file(fp):
@@ -259,31 +254,6 @@ def compute_gstr1_data(file_paths):
     return final_df, summary, hsn_summary_df
 
 
-def _style_header_row(ws, n_cols, row=1):
-    for c in range(1, n_cols + 1):
-        cell = ws.cell(row=row, column=c)
-        cell.fill = HEADER_FILL
-        cell.font = HEADER_FONT
-        cell.alignment = Alignment(horizontal='center', vertical='center')
-
-
-def _style_data_rows(ws, first_row, last_row, first_col, last_col, numeric_cols):
-    for r in range(first_row, last_row + 1):
-        for c in range(first_col, last_col + 1):
-            cell = ws.cell(row=r, column=c)
-            if c in numeric_cols:
-                cell.number_format = NUMBER_FORMAT
-                if isinstance(cell.value, (int, float)) and cell.value < 0:
-                    cell.font = NEGATIVE_FONT
-
-
-def _autofit_columns(ws, df, min_width=10, max_width=40):
-    for i, col in enumerate(df.columns, start=1):
-        sample = df[col].astype(str).head(200)
-        width = max([len(str(col))] + [len(v) for v in sample]) + 2
-        ws.column_dimensions[get_column_letter(i)].width = max(min_width, min(width, max_width))
-
-
 def process_gstr1_odoo(file_paths, output_folder, custom_filename=None):
     """
     Main Wrapper:
@@ -321,11 +291,11 @@ def process_gstr1_odoo(file_paths, output_folder, custom_filename=None):
 
         ws.auto_filter.ref = f"A1:{get_column_letter(ws.max_column)}{len(final_df) + 1}"
         ws.freeze_panes = "A2"
-        _style_header_row(ws, len(final_df.columns))
-        _autofit_columns(ws, final_df)
+        style_header_row(ws, len(final_df.columns))
+        autofit_columns(ws, final_df)
 
         numeric_cols = {final_df.columns.get_loc(c) + 1 for c in ['Invoice Total', 'Taxable Amt.', 'IGST', 'CGST', 'SGST', 'Taxable Amt. (Odoo Reference)'] if c in final_df.columns}
-        _style_data_rows(ws, 2, len(final_df) + 1, 1, len(final_df.columns), numeric_cols)
+        style_data_rows(ws, 2, len(final_df) + 1, 1, len(final_df.columns), numeric_cols)
 
         ws.cell(row=last_row, column=1).value = "GRAND TOTAL"
         for c in range(1, len(final_df.columns) + 1):
@@ -341,7 +311,7 @@ def process_gstr1_odoo(file_paths, output_folder, custom_filename=None):
                 ws.cell(row=last_row, column=col_idx).number_format = NUMBER_FORMAT
 
         # Style the category summary block below the detail table
-        _style_header_row(ws, len(summary.columns), row=summary_start_row + 1)
+        style_header_row(ws, len(summary.columns), row=summary_start_row + 1)
         summary_last_row = summary_start_row + len(summary) + 1
         grand_total_row = summary_start_row + len(summary) + 1
         for c in range(1, len(summary.columns) + 1):
@@ -357,10 +327,10 @@ def process_gstr1_odoo(file_paths, output_folder, custom_filename=None):
         if len(hsn_summary_df) > 0:
             hsn_ws.auto_filter.ref = f"A1:{get_column_letter(hsn_ws.max_column)}{len(hsn_summary_df) + 1}"
         hsn_ws.freeze_panes = "A2"
-        _style_header_row(hsn_ws, len(hsn_summary_df.columns))
-        _autofit_columns(hsn_ws, hsn_summary_df)
+        style_header_row(hsn_ws, len(hsn_summary_df.columns))
+        autofit_columns(hsn_ws, hsn_summary_df)
         hsn_numeric_cols = {hsn_summary_df.columns.get_loc(c) + 1 for c in ['Taxable Value', 'IGST', 'CGST', 'SGST', 'Total Tax'] if c in hsn_summary_df.columns}
-        _style_data_rows(hsn_ws, 2, len(hsn_summary_df) + 1, 1, len(hsn_summary_df.columns), hsn_numeric_cols)
+        style_data_rows(hsn_ws, 2, len(hsn_summary_df) + 1, 1, len(hsn_summary_df.columns), hsn_numeric_cols)
 
         wb.save(output_full_path)
 
