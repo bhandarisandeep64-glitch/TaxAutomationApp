@@ -90,22 +90,34 @@ def _build_zoho_file():
 
 def _build_portal_file_real_shape():
     """Models the *actual* raw GSTR-2B portal export shape (confirmed
-    against a real download), which is different from _build_portal_file()
-    above in the one way that mattered for a real bug: 'ITC Availability'
-    is already a genuine per-invoice column sitting right on the B2B sheet
-    itself (GSTN puts it there directly, values like 'Yes'/'No' per row),
-    and the "ITC Available"/"ITC not available"/etc. sheets are NOT
-    invoice-level lists at all -- they're the portal's own aggregate
-    GSTR-3B-table-wise summary (Heading/GSTR-3B table/tax columns only, no
-    GSTIN or Invoice Number anywhere). An earlier version of
-    compute_reco_data_zoho assumed the opposite (eligibility merged in from
-    those aggregate sheets) and, finding no per-invoice data there,
-    overwrote the real 'ITC Availability' column with blanks -- silently
-    zeroing every ITC bucket on real client files. This fixture exists so
-    that regression can't quietly reappear."""
+    against a real download), which differs from _build_portal_file() above
+    in two ways that both caused real bugs:
+
+    1. 'ITC Availability' is already a genuine per-invoice column sitting
+       right on the B2B sheet itself (GSTN puts it there directly, values
+       like 'Yes'/'No' per row), and the "ITC Available"/"ITC not
+       available"/etc. sheets are NOT invoice-level lists at all -- they're
+       the portal's own aggregate GSTR-3B-table-wise summary (Heading/
+       GSTR-3B table/tax columns only, no GSTIN or Invoice Number
+       anywhere). An earlier version of compute_reco_data_zoho assumed the
+       opposite (eligibility merged in from those aggregate sheets) and,
+       finding no per-invoice data there, overwrote the real 'ITC
+       Availability' column with blanks -- silently zeroing every ITC
+       bucket on real client files.
+
+    2. The real tax columns are headered 'Integrated Tax(₹)' / 'Central
+       Tax(₹)' / 'State/UT Tax(₹)' -- no space before the parenthesis --
+       which does NOT exact-match RENAME_MAP's 'Integrated Tax (₹)' (with a
+       space), so the rename to 'IGST/CGST/SGST Tax Amount' silently never
+       fires on real files. _sum4_zoho used to look up those exact renamed
+       names, so it always summed to 0 for every real file even once bug 1
+       was fixed -- 'Taxable Value' alone looked fine because that one
+       rename key happens to have no such space mismatch.
+
+    This fixture exists so neither regression can quietly reappear."""
     b2b_cols = ['GSTIN of supplier', 'Trade/Legal name', 'Invoice number', 'Invoice Date',
-                'Invoice Value (₹)', 'Place of supply', 'Supply Attract Reverse Charge', 'Rate (%)',
-                'Taxable Value (₹)', 'Integrated Tax (₹)', 'Central Tax (₹)', 'State/UT Tax (₹)', 'Cess Amount (₹)',
+                'Invoice Value(₹)', 'Place of supply', 'Supply Attract Reverse Charge', 'Rate (%)',
+                'Taxable Value (₹)', 'Integrated Tax(₹)', 'Central Tax(₹)', 'State/UT Tax(₹)', 'Cess(₹)',
                 'ITC Availability']
     rows = [
         # needs >6 raw rows (header + 6 data rows) to clear clean_portal_data's
@@ -153,6 +165,30 @@ def test_itc_availability_survives_real_shaped_portal_file():
         f"ITC Availability got wiped out: {b2b['ITC Availability'].tolist()}"
 
     print("ITC Availability survives a real-shaped portal file (not wiped by a phantom merge) OK")
+
+
+def test_gstr2b_buckets_sum_real_shaped_tax_columns_correctly():
+    """The second real bug: with the real (no-space) tax column headers,
+    _sum4_zoho must still find and sum the IGST/CGST/SGST columns -- not
+    silently return 0 while Taxable Value looks fine. FILL-001/002/003
+    exact-match _build_zoho_file()'s filler rows (taxable 1000, IGST 180
+    each); INV-001 mismatches on amount (portal 10000 vs books 20000) so it
+    correctly stays excluded from the claimable bucket."""
+    from modules.indirect_tax.gstr2b_reco_zoho_engine import compute_reco_data_zoho, compute_gstr2b_buckets_zoho
+
+    portal_file = _build_portal_file_real_shape()
+    zoho_file = _build_zoho_file()
+
+    processed_portal, zoho_data, _ = compute_reco_data_zoho(portal_file, zoho_file, '2025-12')
+    buckets = compute_gstr2b_buckets_zoho(processed_portal, zoho_data)
+
+    current = buckets['current_month_b2b']
+    assert abs(current['taxable'] - 3000.0) < 0.01, f"Taxable total wrong: {current}"
+    assert abs(current['igst'] - 540.0) < 0.01, \
+        f"IGST summed to 0 despite real invoices -- column lookup regression: {current}"
+    assert abs(current['cgst']) < 0.01 and abs(current['sgst']) < 0.01, f"Unexpected CGST/SGST: {current}"
+
+    print("GSTR2B SUMMARY buckets sum real (no-space) tax column headers correctly OK")
 
 
 def _get_row(df, inv):
@@ -257,3 +293,4 @@ if __name__ == '__main__':
     test_gstr2b_reco_zoho_engine()
     test_master_dashboard_formulas_reference_correct_rows()
     test_itc_availability_survives_real_shaped_portal_file()
+    test_gstr2b_buckets_sum_real_shaped_tax_columns_correctly()

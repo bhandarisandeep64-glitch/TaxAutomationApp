@@ -1007,11 +1007,27 @@ def _find_sheet_zoho(sheets, name, is_books=False):
     return None
 
 def _sum4_zoho(df):
+    """Real portal exports header the tax columns 'Integrated Tax(₹)' /
+    'Central Tax(₹)' / 'State/UT Tax(₹)' (no space before the parenthesis),
+    which doesn't exact-match RENAME_MAP's 'Integrated Tax (₹)' (with a
+    space) -- so the rename to 'IGST/CGST/SGST Tax Amount' silently never
+    fires on real files, and an exact-name lookup here would always return
+    0 for the tax columns (only 'Taxable Value' happened to still match,
+    since that rename key has no such space mismatch). Uses the same
+    substring-based column lookup already used elsewhere in this file
+    (see generate_lookup_maps' find_fin_col) instead of relying on the
+    rename."""
     if df is None or df.empty:
         return {'taxable': 0.0, 'igst': 0.0, 'cgst': 0.0, 'sgst': 0.0}
+    def find_col(keywords):
+        return next((c for c in df.columns if any(k in str(c).lower() for k in keywords)), None)
+    tax_col = find_col(['taxable'])
+    igst_col = find_col(['igst', 'integrated'])
+    cgst_col = find_col(['cgst', 'central'])
+    sgst_col = find_col(['sgst', 'state', 'ut'])
     def s(col):
-        return float(pd.to_numeric(df[col], errors='coerce').fillna(0).sum()) if col in df.columns else 0.0
-    return {'taxable': s('Taxable Value'), 'igst': s('IGST Tax Amount'), 'cgst': s('CGST Tax Amount'), 'sgst': s('SGST Tax Amount')}
+        return float(pd.to_numeric(df[col], errors='coerce').fillna(0).sum()) if col else 0.0
+    return {'taxable': s(tax_col), 'igst': s(igst_col), 'cgst': s(cgst_col), 'sgst': s(sgst_col)}
 
 
 def compute_gstr2b_buckets_zoho(processed_portal, zoho_data):
