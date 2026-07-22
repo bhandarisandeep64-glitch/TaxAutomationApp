@@ -523,10 +523,24 @@ ITC_AVAILABILITY_LABELS = {
 }
 
 def apply_itc_availability(processed_portal, reference_sheets):
-    """Adds an 'ITC Availability' column to every portal sheet, looked up
-    from the ITC-eligibility reference sheets by (GSTIN, normalized invoice
-    number). Blank if an invoice isn't listed in any reference sheet (e.g.
-    no reference sheets were present in this particular portal export)."""
+    """Ensures every portal sheet has an 'ITC Availability' column WITHOUT
+    destroying the one the export already carries.
+
+    The GSTR-2B portal export puts 'ITC Availability' ('Yes'/'No') as a
+    native per-invoice column right on each B2B/CDNR sheet, and
+    clean_portal_df preserves it -- so it's authoritative. The "ITC
+    Available"/"ITC not available"/"ITC Reversal"/"ITC Rejected" sheets are
+    the portal's aggregate GSTR-3B-table summaries (no GSTIN/Invoice Number
+    at all -- confirmed against a real download, where they don't even
+    survive header cleaning), so they can never supply per-invoice data.
+
+    An earlier version built a lookup from those reference sheets, found it
+    empty on every real file, and then blanked the real column -- which
+    zeroed every ITC bucket in the GSTR-3B GSTR2B SUMMARY (current-month ITC
+    included). Now: a sheet that already has a populated native column keeps
+    it untouched; only a sheet genuinely lacking one gets a column
+    synthesized (from the reference sheets if they're ever usable, else
+    blank)."""
     availability_map = {}
     for sheet_name, df in reference_sheets.items():
         label = ITC_AVAILABILITY_LABELS.get(sheet_name.strip())
@@ -537,13 +551,11 @@ def apply_itc_availability(processed_portal, reference_sheets):
             if key[1]:
                 availability_map[key] = label
 
-    if not availability_map:
-        for df in processed_portal.values():
-            df['ITC Availability'] = ''
-        return processed_portal
-
     for df in processed_portal.values():
-        if 'GSTIN' not in df.columns or 'Invoice Number' not in df.columns:
+        # Native column present and actually populated -> authoritative, keep it.
+        if 'ITC Availability' in df.columns and df['ITC Availability'].astype(str).str.strip().ne('').any():
+            continue
+        if not availability_map or 'GSTIN' not in df.columns or 'Invoice Number' not in df.columns:
             df['ITC Availability'] = ''
             continue
         df['ITC Availability'] = [

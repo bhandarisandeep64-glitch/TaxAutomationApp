@@ -24,7 +24,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 import pandas as pd
 
-from modules.indirect_tax.gstr2b_reco_engine import generate_reco_report
+from modules.indirect_tax.gstr2b_reco_engine import generate_reco_report, apply_itc_availability
 
 
 def _build_portal_file():
@@ -138,5 +138,42 @@ def test_gstr2b_reco_engine():
     print("ALL TESTS PASSED")
 
 
+def test_native_itc_availability_not_wiped():
+    """Real bug (same class as the Zoho GSTR-3B one): the GSTR-2B export
+    carries 'ITC Availability' as a native per-invoice column on B2B/CDNR,
+    and the "ITC Available"/etc. sheets are aggregate-only (no GSTIN/Invoice
+    Number -- on a real download they don't even survive header cleaning, so
+    reference_sheets comes back empty). apply_itc_availability must NOT blank
+    the real column when it has no reference data -- doing so zeroed every
+    ITC bucket in the Odoo GSTR-3B GSTR2B SUMMARY (current-month ITC
+    included). Verified live against a real portal file (294 'Yes' rows
+    survive); this fixture guards the contract without needing that file."""
+    b2b = pd.DataFrame({
+        'GSTIN': ['27AAAAA0000A1Z5', '27BBBBB0000B1Z5'],
+        'Invoice Number': ['INV-1', 'INV-2'],
+        'Taxable Value': [1000.0, 2000.0],
+        'IGST Tax Amount': [180.0, 0.0],
+        'CGST Tax Amount': [0.0, 180.0],
+        'SGST Tax Amount': [0.0, 180.0],
+        'ITC Availability': ['Yes', 'Yes'],   # native, populated
+    })
+    processed_portal = {'B2B': b2b.copy()}
+
+    # No usable reference sheets -- the real-world situation.
+    apply_itc_availability(processed_portal, reference_sheets={})
+
+    got = processed_portal['B2B']['ITC Availability'].astype(str).str.strip().tolist()
+    assert got == ['Yes', 'Yes'], f"Native ITC Availability got wiped: {got}"
+
+    # A sheet that genuinely lacks the column still gets one (blank), gracefully.
+    no_col = pd.DataFrame({'GSTIN': ['27CCCCC0000C1Z5'], 'Invoice Number': ['INV-3']})
+    pp2 = {'B2B': no_col}
+    apply_itc_availability(pp2, reference_sheets={})
+    assert 'ITC Availability' in pp2['B2B'].columns, "Missing column not synthesized"
+
+    print("Native ITC Availability preserved (not wiped when no reference data): OK")
+
+
 if __name__ == '__main__':
     test_gstr2b_reco_engine()
+    test_native_itc_availability_not_wiped()
