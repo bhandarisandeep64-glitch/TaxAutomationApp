@@ -10,6 +10,7 @@ import AdminDashboard from './pages/AdminDashboard';
 import ComplianceTable from './pages/ComplianceTable';
 import Notes from './pages/Notes';
 import Hub from './pages/Hub';
+import Resume from './pages/Resume';
 
 // --- MODULES ---
 import TdsOdoo from './modules/DirectTax/TdsOdoo';
@@ -89,6 +90,7 @@ const [user, setUser] = useState(() => {
         case 'compliances': return 'Compliance Tracker';
         case 'notes': return 'Notes';
         case 'hub': return 'Hub';
+        case 'resume': return 'Resume Builder';
         case 'gstr9_reco': return 'GSTR-9 Reconciliation';
         case 'tds_odoo': return 'TDS Automation | Odoo';
         case 'tds_zoho': return 'TDS Automation | Zoho';
@@ -122,6 +124,7 @@ const [user, setUser] = useState(() => {
       if (currentModule === 'compliances') return <ComplianceTable user={user} />;
       if (currentModule === 'notes') return <Notes user={user} />;
       if (currentModule === 'hub') return <Hub />;
+      if (currentModule === 'resume') return <Resume />;
       if (currentModule === 'gstr9_reco') return <Gstr9Reco />;
       if (currentModule === 'tds_odoo') return <TdsOdoo />;
       if (currentModule === 'tds_zoho') return <TdsZoho />;
