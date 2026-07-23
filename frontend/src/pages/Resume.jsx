@@ -112,16 +112,35 @@ export default function Resume() {
   const downloadPdf = () => {
     const node = resumeRef.current;
     if (!node) return;
-    const win = window.open('', '_blank', 'width=880,height=1120');
-    if (!win) { alert('Please allow pop-ups to download the PDF.'); return; }
-    win.document.write(
+    const html =
       `<!doctype html><html><head><title>${(data.name || 'Resume').replace(/</g, '')}</title>` +
-      `<style>${RESUME_CSS}\n@page{size:A4;margin:0;}\nbody{margin:0;background:#fff;}\n.resume-sheet{box-shadow:none;margin:0;}</style>` +
-      `</head><body>${node.outerHTML}</body></html>`
-    );
-    win.document.close();
-    win.focus();
-    setTimeout(() => win.print(), 350);
+      `<style>${RESUME_CSS}\n@page{size:A4;margin:0;}\nhtml,body{margin:0;background:#fff;}\n.resume-sheet{box-shadow:none;margin:0;}</style>` +
+      `</head><body>${node.outerHTML}</body></html>`;
+
+    // A hidden iframe (not a popup) so no popup blocker can stop it. The
+    // browser's print dialog opens over the page -> choose "Save as PDF".
+    const existing = document.getElementById('resume-print-frame');
+    if (existing) existing.remove();
+    const iframe = document.createElement('iframe');
+    iframe.id = 'resume-print-frame';
+    iframe.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;';
+    document.body.appendChild(iframe);
+
+    const doc = iframe.contentWindow.document;
+    doc.open();
+    doc.write(html);
+    doc.close();
+
+    // document.write's load timing is unreliable, so trigger print on a
+    // short delay once the markup + fonts have settled.
+    setTimeout(() => {
+      try {
+        iframe.contentWindow.focus();
+        iframe.contentWindow.print();
+      } catch (e) {
+        alert('Could not open the print dialog. Please try again.');
+      }
+    }, 350);
   };
 
   const contact = [data.phone, data.email, data.linkedin, data.location].filter(Boolean).join('  |  ');
