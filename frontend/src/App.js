@@ -65,7 +65,6 @@ const [user, setUser] = useState(() => {
       .then((data) => completeLogin(data.user, data.token))
       .catch((err) => setSsoError(err.data?.error || 'Single sign-on failed.'))
       .finally(() => setSsoChecking(false));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const [currentModule, setCurrentModule] = useState('admin_dashboard');
