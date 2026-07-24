@@ -1,9 +1,26 @@
 import React, { useState } from 'react';
-import { FileText, CheckCircle, Users, LogOut, ChevronDown, ChevronRight, Lock, Landmark, StickyNote, Compass, Layers, ScrollText } from 'lucide-react';
+import { FileText, CheckCircle, Users, LogOut, ChevronDown, ChevronRight, Lock, Landmark, StickyNote, Compass, Layers, ScrollText, ExternalLink } from 'lucide-react';
 import PeepalLeaf from './icons/PeepalLeaf';
+import { apiJson } from '../api/client';
+
+// Where the Management app lives -- overridable via env for local dev.
+const MANAGEMENT_APP_URL = process.env.REACT_APP_MANAGEMENT_URL || 'https://bgcorp-management.onrender.com';
 
 export default function Sidebar({ user, onNavigate, onLogout, currentModule, mobileMenuOpen }) {
   const [expandedMenus, setExpandedMenus] = useState({});
+  const [ssoBusy, setSsoBusy] = useState(false);
+
+  const openManagement = async () => {
+    setSsoBusy(true);
+    try {
+      const data = await apiJson('/api/auth/sso-issue');
+      window.open(`${MANAGEMENT_APP_URL}/sso/from-origin?token=${encodeURIComponent(data.token)}`, '_blank');
+    } catch (err) {
+      alert(err.data?.error || 'Could not open Management right now.');
+    } finally {
+      setSsoBusy(false);
+    }
+  };
 
   const isAllowed = (moduleId) => {
     if (user.role === 'admin') return true;
@@ -134,6 +151,15 @@ export default function Sidebar({ user, onNavigate, onLogout, currentModule, mob
             <Users className="w-4 h-4" /> Admin Dashboard
           </button>
         )}
+
+        <button
+          onClick={openManagement}
+          disabled={ssoBusy}
+          title="Open the Management app (tasks, time, planner) -- signs you in automatically"
+          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-md mb-3 transition-colors text-sm font-medium text-neutral-300 hover:bg-white/[0.04] disabled:opacity-50"
+        >
+          <ExternalLink className="w-4 h-4 text-neutral-500" /> Management
+        </button>
 
         <div className="pb-3 mb-3 border-b border-white/[0.06]">
           <p className="px-2.5 text-[11px] font-semibold text-neutral-600 uppercase tracking-[0.12em] mb-2">Modules</p>

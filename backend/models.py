@@ -11,6 +11,10 @@ class User(db.Model):
     role = db.Column(db.String(20), nullable=False, default='user')
     status = db.Column(db.String(20), nullable=False, default='Active')
     restricted_modules = db.Column(db.JSON, nullable=False, default=list)
+    # Optional -- links this account to the same person's Management app
+    # account for cross-app single sign-on (modules/auth.py sso_*). Not
+    # required for normal login.
+    email = db.Column(db.String(200), unique=True, nullable=True)
 
     def to_dict(self, include_password=False):
         data = {
@@ -20,6 +24,7 @@ class User(db.Model):
             "role": self.role,
             "status": self.status,
             "restrictedModules": self.restricted_modules or [],
+            "email": self.email,
         }
         if include_password:
             data["password"] = self.password

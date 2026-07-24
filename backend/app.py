@@ -17,6 +17,7 @@ from database import init_db
 from modules.auth import (
     load_users, authenticate_user, public_user,
     create_user, update_user, delete_user,
+    issue_sso_token, sso_login,
 )
 from modules.auth_guard import require_auth, require_admin
 from modules.chat import load_messages, save_message
@@ -136,6 +137,26 @@ def login():
 @require_admin
 def get_users():
     return jsonify([public_user(u) for u in load_users()])
+
+# --- Cross-app SSO with the Management app ---
+
+@app.route('/api/auth/sso-issue', methods=['GET'])
+@require_auth
+def sso_issue():
+    """Mints a short-lived token the caller can hand to the Management app
+    to be signed in there automatically, without a second login."""
+    token, error = issue_sso_token(g.current_user)
+    if error:
+        return jsonify({"success": False, "error": error}), 400
+    return jsonify({"success": True, "token": token})
+
+@app.route('/api/auth/sso-login', methods=['POST'])
+def sso_login_route():
+    """Verifies a token issued by the Management app and logs in as the
+    matching local account, returning the same shape as /api/auth/login."""
+    data = request.json or {}
+    result = sso_login(data.get('token'))
+    return jsonify(result), (200 if result.get('success') else 401)
 
 @app.route('/api/auth/users', methods=['POST'])
 @require_admin

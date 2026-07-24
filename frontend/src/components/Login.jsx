@@ -3,9 +3,9 @@ import { User, Lock, Send, CheckCircle, ArrowLeft, AlertCircle, ShieldCheck } fr
 import { apiFetch, setToken } from '../api/client';
 import PeepalLeaf from './icons/PeepalLeaf';
 
-export default function Login({ onLogin }) {
+export default function Login({ onLogin, initialError }) {
   const [formData, setFormData] = useState({ username: '', password: '' });
-  const [error, setError] = useState('');
+  const [error, setError] = useState(initialError || '');
   const [loading, setLoading] = useState(false);
   const [isRestricted, setIsRestricted] = useState(false);
   const [requestReason, setRequestReason] = useState('');

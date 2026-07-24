@@ -129,3 +129,83 @@ def verify_token(token):
         return _serializer().loads(token, max_age=TOKEN_MAX_AGE_SECONDS)
     except (BadSignature, SignatureExpired):
         return None
+
+
+# ==========================================
+#  CROSS-APP SSO (Origin <-> Management)
+# ==========================================
+# A separate signer from the app's own session tokens above -- a distinct
+# secret (SSO_SHARED_SECRET, set identically on both apps) and salt, so a
+# leaked cross-app token can never be replayed as a normal login token or
+# vice versa. The token only ever carries an email address and is valid for
+# seconds, just long enough for the browser redirect round trip.
+
+SSO_TOKEN_MAX_AGE_SECONDS = 90
+
+
+def _sso_serializer():
+    secret = os.environ.get("SSO_SHARED_SECRET")
+    if not secret:
+        raise RuntimeError("SSO_SHARED_SECRET environment variable is not set")
+    return URLSafeTimedSerializer(secret, salt="bgcorp-sso-v1")
+
+
+def _current_identity_email(current_user_payload):
+    """Resolve the email to carry in an outbound SSO token for the caller.
+
+    The env-based master admin has no database row (see authenticate_user),
+    so its email comes from ADMIN_EMAIL instead of a users.email lookup.
+    """
+    if current_user_payload.get("id") == 0:
+        return os.environ.get("ADMIN_EMAIL")
+    user = db.session.get(User, current_user_payload["id"])
+    return user.email if user else None
+
+
+def issue_sso_token(current_user_payload):
+    """Mint an outbound cross-app token for the currently authenticated user.
+
+    Returns (token, error) -- exactly one is None.
+    """
+    email = _current_identity_email(current_user_payload)
+    if not email:
+        return None, "No email is linked to this account for single sign-on."
+    return _sso_serializer().dumps({"email": email}), None
+
+
+def _resolve_incoming_email(email):
+    """Turn an incoming SSO email claim into a login-shaped user dict, or None."""
+    admin_email = os.environ.get("ADMIN_EMAIL")
+    if admin_email and email.lower() == admin_email.lower():
+        return {
+            "id": 0,
+            "username": os.environ.get("ADMIN_USER", "admin"),
+            "name": "Master Admin (Env)",
+            "role": "admin",
+            "status": "Active",
+            "restrictedModules": [],
+        }
+    user = User.query.filter(db.func.lower(User.email) == email.lower()).first()
+    if user and user.status != "Restricted":
+        return user.to_dict()
+    return None
+
+
+def sso_login(token):
+    """Verify an inbound cross-app token and log in as the matching local user.
+
+    Returns the same {"success", "user", "token"} / {"success": False, "error"}
+    shape as authenticate_user(), so callers (the /api/auth/sso-login route)
+    don't need a separate response contract.
+    """
+    try:
+        payload = _sso_serializer().loads(token, max_age=SSO_TOKEN_MAX_AGE_SECONDS)
+    except (BadSignature, SignatureExpired):
+        return {"success": False, "error": "Sign-in link expired or invalid. Please try again."}
+
+    email = payload.get("email")
+    user = _resolve_incoming_email(email) if email else None
+    if not user:
+        return {"success": False, "error": "No matching account found for single sign-on."}
+
+    return {"success": True, "user": user, "token": generate_token(user)}

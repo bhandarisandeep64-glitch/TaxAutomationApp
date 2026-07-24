@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { MessageSquare, Menu, Send, X, Shield } from 'lucide-react';
-import { apiFetch, setToken, getToken } from './api/client';
+import { apiFetch, apiJson, setToken, getToken } from './api/client';
 
 // --- COMPONENT IMPORTS ---
 import Login from './components/Login';
@@ -37,6 +37,37 @@ const [user, setUser] = useState(() => {
   // A saved user with no token means a prior session expired -- treat as logged out.
   return savedUser && getToken() ? JSON.parse(savedUser) : null;
 });
+  // True only while we're resolving an incoming ?sso= token from the
+  // Management app, so we don't flash the normal login screen first.
+  const [ssoChecking, setSsoChecking] = useState(
+    () => new URLSearchParams(window.location.search).has('sso')
+  );
+  const [ssoError, setSsoError] = useState('');
+
+  const completeLogin = (userData, token) => {
+    if (token) setToken(token);
+    localStorage.setItem('currentUser', JSON.stringify(userData));
+    setUser(userData);
+    setCurrentModule(userData.role === 'admin' ? 'admin_dashboard' : 'compliances');
+  };
+
+  useEffect(() => {
+    const ssoToken = new URLSearchParams(window.location.search).get('sso');
+    if (!ssoToken) return;
+    // Strip the token from the URL immediately so it can't be re-used via
+    // browser history/back-forward or accidentally shared.
+    window.history.replaceState({}, '', window.location.pathname);
+
+    apiJson('/api/auth/sso-login', {
+      method: 'POST',
+      body: JSON.stringify({ token: ssoToken }),
+    })
+      .then((data) => completeLogin(data.user, data.token))
+      .catch((err) => setSsoError(err.data?.error || 'Single sign-on failed.'))
+      .finally(() => setSsoChecking(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const [currentModule, setCurrentModule] = useState('admin_dashboard');
   const [showChat, setShowChat] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -110,13 +141,14 @@ const [user, setUser] = useState(() => {
   };
 
   if (!user) {
-    return <Login onLogin={(userData) => { 
-    // SAVE TO STORAGE HERE
-    localStorage.setItem('currentUser', JSON.stringify(userData)); 
-    
-    setUser(userData); 
-    setCurrentModule(userData.role === 'admin' ? 'admin_dashboard' : 'compliances'); 
-}} />;
+    if (ssoChecking) {
+      return (
+        <div className="min-h-screen w-full bg-neutral-950 flex items-center justify-center">
+          <p className="text-neutral-500 text-sm">Signing you in…</p>
+        </div>
+      );
+    }
+    return <Login onLogin={(userData, token) => completeLogin(userData, token)} initialError={ssoError} />;
   }
 
   const renderContent = () => {
