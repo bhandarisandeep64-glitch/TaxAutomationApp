@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { User, Lock, Send, CheckCircle, ArrowLeft, AlertCircle, ShieldCheck } from 'lucide-react';
 import { apiFetch, setToken } from '../api/client';
-import PeepalLeaf from './icons/PeepalLeaf';
+import OxIcon from './icons/OxIcon';
 
 export default function Login({ onLogin, initialError }) {
   const [formData, setFormData] = useState({ username: '', password: '' });
@@ -61,7 +61,7 @@ export default function Login({ onLogin, initialError }) {
           {/* Brand */}
           <div className="flex flex-col items-center mb-9 space-y-4">
             <div className="w-14 h-14 rounded-lg bg-neutral-950 border border-green-900/40 flex items-center justify-center shadow-[0_0_24px_rgba(20,83,45,0.2)]">
-              <PeepalLeaf className="w-6 h-6 text-green-800" strokeWidth={1.5} />
+              <OxIcon className="w-6 h-6 text-amber-600" strokeWidth={1.5} />
             </div>
             <div className="text-center">
               <h1 className="text-xl font-semibold text-neutral-50 tracking-[0.08em]">BG CORP GLOBAL</h1>

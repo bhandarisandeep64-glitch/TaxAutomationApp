@@ -1,6 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { LayoutGrid, Landmark, LayoutDashboard } from 'lucide-react';
+import { LayoutGrid } from 'lucide-react';
 import PeepalLeaf from './icons/PeepalLeaf';
+import OxIcon from './icons/OxIcon';
+import RiverIcon from './icons/RiverIcon';
 import { apiJson } from '../api/client';
 
 // Where the Management app lives -- overridable via env for local dev.
@@ -65,7 +67,7 @@ export default function AppSwitcher() {
           <div className="grid grid-cols-2 gap-2 p-3">
             {/* Current app */}
             <div className="flex flex-col items-center text-center gap-1 p-3 rounded-lg border border-indigo-500/40 bg-white/[0.03]">
-              <Landmark className="w-6 h-6 text-indigo-400" />
+              <OxIcon className="w-6 h-6 text-amber-500" />
               <span className="text-sm font-semibold text-neutral-100">Origin</span>
               <span className="text-[0.6rem] text-neutral-500">You're here</span>
             </div>
@@ -76,7 +78,7 @@ export default function AppSwitcher() {
               disabled={busy}
               className="flex flex-col items-center text-center gap-1 p-3 rounded-lg border border-white/[0.08] bg-white/[0.02] hover:bg-white/[0.06] hover:border-white/[0.15] transition-colors disabled:opacity-60"
             >
-              <LayoutDashboard className="w-6 h-6 text-emerald-400" />
+              <RiverIcon className="w-6 h-6 text-sky-400" />
               <span className="text-sm font-semibold text-neutral-100">Management</span>
               <span className="text-[0.6rem] text-neutral-500">
                 {busy ? 'Opening…' : 'Tasks & time'}
