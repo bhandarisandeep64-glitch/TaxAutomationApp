@@ -6,6 +6,7 @@ import { apiFetch, apiJson, setToken, getToken } from './api/client';
 import Login from './components/Login';
 import Sidebar from './components/Sidebar';
 import ChatWidget from './components/ChatWidget';
+import AppSwitcher from './components/AppSwitcher';
 import AdminDashboard from './pages/AdminDashboard';
 import ComplianceTable from './pages/ComplianceTable';
 import Notes from './pages/Notes';
@@ -207,6 +208,7 @@ const [user, setUser] = useState(() => {
                  <button onClick={() => setMobileMenuOpen(!mobileMenuOpen)} className="md:hidden text-neutral-400"><Menu /></button>
                  <h1 className="text-sm font-semibold text-neutral-200 hidden md:block tracking-wide uppercase">{getPageTitle(currentModule)}</h1>
                  <div className="flex items-center gap-4">
+                     <AppSwitcher />
                      <button onClick={() => setShowChat(true)} className="relative p-2 text-neutral-400 hover:text-indigo-400 transition-colors"><MessageSquare className="w-5 h-5" /></button>
                  </div>
              </header>
