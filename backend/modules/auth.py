@@ -111,6 +111,81 @@ def delete_user(user_id):
     return {"success": True}
 
 
+# ==========================================
+#  SUITE PROVISIONING (driven by the Management app's user console)
+# ==========================================
+# Management is the firm's user directory. When an admin there grants or
+# revokes "Origin access", Management calls /api/auth/provision with a token
+# signed by the shared SSO secret; we create/enable/disable the matching
+# Origin account by email so cross-app SSO works.
+
+def _provision_serializer():
+    secret = os.environ.get("SSO_SHARED_SECRET")
+    if not secret:
+        raise RuntimeError("SSO_SHARED_SECRET environment variable is not set")
+    return URLSafeTimedSerializer(secret, salt="bgcorp-provision-v1")
+
+
+def verify_suite_token(token, max_age=120):
+    """True if `token` was signed by the Management app with the shared secret."""
+    if not token:
+        return False
+    try:
+        data = _provision_serializer().loads(token, max_age=max_age)
+    except (BadSignature, SignatureExpired):
+        return False
+    return isinstance(data, dict) and data.get("iss") == "management"
+
+
+def provision_user(data):
+    """Create / enable / disable an Origin account for a person by email.
+
+    active=True  -> ensure an Active account exists (create if missing).
+    active=False -> mark the account 'Restricted' (blocks both login and SSO).
+    """
+    import secrets as _secrets
+
+    email = (data.get("email") or "").strip().lower()
+    if not email:
+        return {"success": False, "error": "email is required"}
+    active = bool(data.get("active", True))
+    name = (data.get("name") or email.split("@")[0]).strip()
+
+    user = User.query.filter(db.func.lower(User.email) == email).first()
+
+    if not active:
+        if user:
+            user.status = "Restricted"
+            db.session.commit()
+        return {"success": True, "action": "disabled"}
+
+    if user:
+        user.status = "Active"
+        if data.get("name"):
+            user.name = name
+        db.session.commit()
+        return {"success": True, "action": "enabled"}
+
+    # No Origin account yet -> create one. Login handle = email; users normally
+    # arrive via SSO, but a password is set so direct login also works.
+    username = email
+    if User.query.filter_by(username=username).first():
+        username = f"{email.split('@')[0]}_{_secrets.token_hex(2)}"
+    password = data.get("password") or _secrets.token_urlsafe(12)
+    user = User(
+        username=username,
+        password=generate_password_hash(password),
+        name=name,
+        role=data.get("role", "user"),
+        status="Active",
+        restricted_modules=[],
+        email=email,
+    )
+    db.session.add(user)
+    db.session.commit()
+    return {"success": True, "action": "created"}
+
+
 def generate_token(user):
     """Issues a signed, expiring token carrying just enough identity to authorize requests."""
     payload = {

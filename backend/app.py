@@ -18,6 +18,7 @@ from modules.auth import (
     load_users, authenticate_user, public_user,
     create_user, update_user, delete_user,
     issue_sso_token, sso_login,
+    verify_suite_token, provision_user,
 )
 from modules.auth_guard import require_auth, require_admin
 from modules.chat import load_messages, save_message
@@ -157,6 +158,16 @@ def sso_login_route():
     data = request.json or {}
     result = sso_login(data.get('token'))
     return jsonify(result), (200 if result.get('success') else 401)
+
+@app.route('/api/auth/provision', methods=['POST'])
+def provision_route():
+    """Service endpoint the Management app calls (authenticated by the shared
+    SSO secret, not a user login) to create/enable/disable an Origin account
+    for a person by email when their Origin access is toggled."""
+    if not verify_suite_token(request.headers.get('X-Suite-Token', '')):
+        return jsonify({"success": False, "error": "unauthorized"}), 401
+    result = provision_user(request.json or {})
+    return jsonify(result), (200 if result.get('success') else 400)
 
 @app.route('/api/auth/users', methods=['POST'])
 @require_admin
