@@ -64,7 +64,7 @@ export default function Login({ onLogin, initialError }) {
               <OxIcon className="w-6 h-6 text-amber-600" strokeWidth={1.5} />
             </div>
             <div className="text-center">
-              <h1 className="text-xl font-semibold text-neutral-50 tracking-[0.08em]">BG CORP GLOBAL</h1>
+              <h1 className="text-xl font-semibold text-neutral-50 tracking-[0.08em]">BHANDARI GROUP</h1>
               <div className="flex items-center justify-center gap-1.5 mt-1.5">
                 <ShieldCheck className="w-3 h-3 text-indigo-400/80" />
                 <p className="text-[10px] font-medium text-neutral-500 uppercase tracking-[0.2em]">Client Workspace</p>

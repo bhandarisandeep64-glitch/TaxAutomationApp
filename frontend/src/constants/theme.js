@@ -1,4 +1,4 @@
-// Corporate design system, for "Origin" (by BG Corp Global).
+// Corporate design system, for "Origin" (by Bhandari Group).
 // A deep, precise indigo drives every interactive element across the whole
 // app -- buttons, active nav, focus rings, highlighted totals. Flat panels
 // with crisp 1px borders, not glassmorphism/glow, read as institutional

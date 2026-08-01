@@ -9,7 +9,7 @@ import { apiJson } from '../api/client';
 const MANAGEMENT_APP_URL =
   process.env.REACT_APP_MANAGEMENT_URL || 'https://bgcorp-management.onrender.com';
 
-// Zoho/Google-style app switcher for the BG Corp Global suite. A grid button
+// Zoho/Google-style app switcher for the Bhandari Group suite. A grid button
 // in the header opens a launcher; Management opens via SSO (issue a token here,
 // hand it to Management's /sso/from-origin) so the user is signed in there
 // automatically.
@@ -46,7 +46,7 @@ export default function AppSwitcher() {
     <div className="relative" ref={ref}>
       <button
         onClick={() => setOpen((o) => !o)}
-        title="BG Corp Global apps"
+        title="Bhandari Group apps"
         className="p-2 text-neutral-400 hover:text-indigo-400 transition-colors"
       >
         <LayoutGrid className="w-5 h-5" />
@@ -59,7 +59,7 @@ export default function AppSwitcher() {
               <PeepalLeaf className="w-5 h-5" />
             </span>
             <div>
-              <div className="text-sm font-semibold text-neutral-100">BG Corp Global</div>
+              <div className="text-sm font-semibold text-neutral-100">Bhandari Group</div>
               <div className="text-[0.65rem] text-neutral-500">App suite</div>
             </div>
           </div>
